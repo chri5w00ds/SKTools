@@ -255,10 +255,17 @@ local function BuildSubs(panel, C3, CW)
         .. "where the bottom icon sits. This moves it to just under that icon while the icons show."
     local matchChk = feral:Add(W.Check(feral, "Match level box width",
         function() return F().match ~= false end,
-        function(v) F().match = v; FeralChanged() end, CW), C3, -326 - sh)
+        function(v) F().match = v; FeralChanged() end, 108), C3, -326 - sh)
+    local behindChk = feral:Add(W.Check(feral, "Behind-only skills",
+        function() return F().behind ~= false end,
+        function(v) F().behind = v; FeralChanged() end, 108), C3 + 112, -326 - sh)
+    behindChk.tooltip = "Shred, Ravage, Pounce, Backstab, Ambush and Garrote work only from behind. Addons can't "
+        .. "see where you stand, so these hide while your target is targeting you (a mob faces whoever it attacks), "
+        .. "and for a moment after the game says \"You must be behind your target\". Any other skill the game "
+        .. "turns down that way is learned and treated the same."
     matchChk.tooltip = "Makes each icon as wide as the level box. Off: the Icon size slider decides."
-    W.Note(feral, "Lit = usable now (power, procs), in melee range and off cooldown. Shred's \"behind the "
-        .. "target\" rule cannot be read by addons.", C3, -354 - sh, CW)
+    W.Note(feral, "Lit = usable now (power, procs), in melee range and off cooldown; behind-only skills also "
+        .. "while your target isn't facing you.", C3, -354 - sh, CW)
     feral:Add(W.Button(feral, "Reset", 108, function()
         ns.Feral.Reset()
         feral:SyncAll()

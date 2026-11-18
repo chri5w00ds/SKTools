@@ -272,6 +272,7 @@ local TAB_ALIASES = {
     db = "db", database = "db", profession = "db", professions = "db", prof = "db",
     action = "action", actionbar = "action", bar = "action", tint = "action",
     widgets = "widgets", widget = "widgets", buffs = "widgets",
+    cursor = "cursor", mouse = "cursor", glow = "cursor",
     cooldowns = "cooldowns", cd = "cooldowns", cdm = "cooldowns",
     nameplate = "nameplate", nameplates = "nameplate", plates = "nameplate", healthbar = "nameplate", designer = "nameplate",
     marks = "nameplate", quest = "nameplate", combo = "nameplate",
@@ -312,7 +313,7 @@ SlashCmdList.SKTOOLS = function(msg)
     else
         ns.Print("version " .. tostring(ns.version) .. " - commands:")
         print("  /skt  - open or close the settings window")
-        print("  /skt db | action | widgets | cooldowns | nameplate | buttons | profiles  - open that settings tab")
+        print("  /skt db | action | widgets | cursor | cooldowns | nameplate | buttons | profiles  - open that settings tab")
         print("  /skt map  - open or close the Profession DB window (also /sdb)")
         print("  /skt minimap  - open or close the minimap button box\n  /skt platesdebug | platelist | icondebug  - print what the game tells the plates / every plate it has / the ready icons\n  /skt buffdebug  - print what the buff widgets see\n  /skt totemdebug - print the totems and Lightning Shield charges seen\n  /skt cddebug    - print what the cooldown panes show")
         print("  Short commands for their own parts: /sdb, /sm, /skr (/rb)")

@@ -11,17 +11,13 @@ local function Changed() B.Apply() end
 local ROWS = 15            -- buttons listed per page
 
 -- the bee's clicks: every mix of Shift, Ctrl and Alt with each button, and what it does
-local function BuildClicks(page, back)
+local function BuildClicks(page)
     local CL, CR = 24, 400
-    W.Header(page, "Bee button clicks", CL, -8, 330)
-    W.Header(page, "", CR, -8, 330)
     for col, mouse in ipairs({ "LeftButton", "RightButton" }) do
         local x = (col == 1) and CL or CR
-        local head = page:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-        head:SetPoint("TOPLEFT", page, "TOPLEFT", x, -34)
-        head:SetText(mouse == "LeftButton" and "Left-click" or "Right-click")
+        W.Header(page, mouse == "LeftButton" and "Left-click" or "Right-click", x, -8, 330)
         for i, m in ipairs(ns.BEE_MODIFIERS) do
-            local y = -60 - (i - 1) * 32
+            local y = -36 - (i - 1) * 32
             local label = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
             label:SetPoint("TOPLEFT", page, "TOPLEFT", x, y - 5)
             label:SetText(m.text)
@@ -37,13 +33,12 @@ local function BuildClicks(page, back)
             dd.alignRight = col == 2                -- and leftwards in the right-hand column
         end
     end
-    page:Add(W.Button(page, "Back", 90, back), CL, -332)
     page:Add(W.Button(page, "Default clicks", 120, function()
         db().clicks = ns.DeepCopy(ns.BOX_DEFAULTS.clicks)
         page:SyncAll()
-    end), CL + 100, -332)
+    end), CL, -306)
     W.Note(page, "Hold Shift, Ctrl or Alt (or a mix) as you click the bee. Clicks set to Nothing are left out "
-        .. "of the bee's tooltip. A released bee is dragged with the left button.", CL, -364, 700)
+        .. "of the bee's tooltip. A released bee is dragged with the left button.", CL + 136, -306, 560)
 end
 
 local function Build(panel)
@@ -84,18 +79,40 @@ local function Build(panel)
         panel:SyncAll()
     end), C1, -192)
 
-    -- the bee's clicks, on a page of their own
-    local clicks = CreateFrame("Frame", nil, panel)
-    clicks:SetAllPoints(panel)
-    clicks:SetFrameLevel(panel:GetFrameLevel() + 20)
-    W.Fill(clicks, W.NAVY[1], W.NAVY[2], W.NAVY[3], 1)  -- covers the box settings while it is open
-    clicks:EnableMouse(true)
+    -- the bee's clicks, in a window of their own, framed like the settings window, closed with its X
+    local win = CreateFrame("Frame", "SKToolsBeeClicks", UIParent)
+    win:SetSize(760, 400)
+    win:SetFrameStrata("DIALOG")
+    win:SetToplevel(true)
+    win:EnableMouse(true)
+    win:SetMovable(true)
+    win:SetClampedToScreen(true)
+    win:RegisterForDrag("LeftButton")
+    win:SetScript("OnDragStart", win.StartMoving)
+    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    W.Skin(win, "dialog")
+    W.TitlePlate(win, "Bee button clicks")
+    local close = W.CloseButton(win, function() win:Hide() end)
+    close:SetPoint("TOPRIGHT", -5, -5)
+    tinsert(UISpecialFrames, "SKToolsBeeClicks")       -- Esc closes it
+    local clicks = CreateFrame("Frame", nil, win)
+    clicks:SetPoint("TOPLEFT", win, "TOPLEFT", 0, -36)
+    clicks:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", 0, 0)
     W.Panel(clicks)
-    BuildClicks(clicks, function() clicks:Hide() end)
-    clicks:Hide()
-    panel.clicksPage = clicks
+    BuildClicks(clicks)
+    win:Hide()
+    -- it goes with the settings window
+    local top = _G.SKToolsSettings
+    if top and top.HookScript then top:HookScript("OnHide", function() win:Hide() end) end
+    panel.clicksPage = win
+    win.SyncAll = function() clicks:SyncAll() end
+    win.page = clicks
     panel:Add(W.Button(panel, "Bee button clicks...", 216, function()
-        clicks:Show(); clicks:SyncAll()
+        if win:IsShown() then win:Hide(); return end
+        win:ClearAllPoints()
+        win:SetPoint("CENTER", top or UIParent, "CENTER", 0, 0)
+        win:SetFrameLevel(((top and top:GetFrameLevel()) or 1) + 30)
+        win:Show(); clicks:SyncAll()
     end), C1, -226)
 
     W.Note(panel, "Buttons are only moved, not changed: click, tooltip and menu work as before, "

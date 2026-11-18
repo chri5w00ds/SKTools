@@ -1032,7 +1032,7 @@ local function Build(panel)
     FSlider(s, "Horizontal", "cx", -80, 80, -38)
     FSlider(s, "Vertical", "cy", -40, 40, -82)
     W.Note(s, "In the game it stands over the middle of the health bar: square, one and a half times the bar's "
-        .. "height, so half the bar's height shows above it. Here it is drawn under the sample, out of the way. "
+        .. "height, centred on the bar so it overhangs equally above and below. Here it is drawn under the sample, out of the way. "
         .. "It can hold a skill, or the set's own big-icon rule (Ferocious Bite / Shifting Power; Primal Bite). "
         .. "Shown while its skill is usable, your target is in range and it is off cooldown; click it on the "
         .. "sample to choose the skill.", C3, -130, CW)

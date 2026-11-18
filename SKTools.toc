@@ -2,7 +2,7 @@
 ## Title: SKTools
 ## Notes: Profession database with map pins, action bar range and resource tint, nameplate quest marks, combo points and a Hunter range crescent, a minimap button box, and cooldown panes with health, power and cast bars. /skt for settings.
 ## Author: Scotskoogen-Chris
-## Version: 3.0.1
+## Version: 3.2.3
 ## IconTexture: Interface\AddOns\SKTools\Media\Logo
 ## SavedVariables: SKToolsDB
 ## SavedVariablesPerCharacter: SKToolsCharDB
@@ -39,6 +39,10 @@ Modules\ActionBar\Options.lua
 # Buff widgets (personal buffs, missing class buffs)
 Modules\Widgets\Buffs.lua
 Modules\Widgets\Options.lua
+
+# Cursor (combat glow, Alt tooltips)
+Modules\Cursor\Cursor.lua
+Modules\Cursor\Options.lua
 
 # Cooldown panes (our own display of Blizzard's Cooldown Manager)
 Modules\Cooldowns\Panes.lua

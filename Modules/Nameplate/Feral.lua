@@ -30,6 +30,7 @@ local function Plain(v)
 end
 
 ns.FERAL_DEFAULTS = {
+    behind      = true,      -- Shred, Backstab and the like: not while your target faces you
     enabled     = true,
     size        = 19,        -- pixels per icon (when "Match level box width" is off)
     match       = false,     -- icons as wide as the level box
@@ -161,7 +162,7 @@ local db, holder, icons = nil, nil, {}
 -- the mirrored set to the right of the level box (on our own plates only)
 local rholder, ricons = nil, {}
 local rfinHolder, rfin
--- the centre big icon: square, over the middle of the health bar, half the bar's height showing above it
+-- the centre big icon: square, over the middle of the health bar, overhanging it equally above and below
 local cfinHolder, cfin
 local RightX
 
@@ -231,6 +232,37 @@ local function SkillByName(name)
 end
 
 local finHolder, fin            -- the finisher icon, to the left of the health bar
+
+-- A gate for a big icon: shows it only once a hidden number reaches a threshold. A status bar the
+-- size of the icon runs from threshold - 1 to threshold; the icon sits in a frame clipped to the
+-- bar's fill, so it is all there when the fill is full and none of it otherwise. The game fills the
+-- bar from the hidden value; the addon never reads it.
+local function Gate(icon, holder, value, at)
+    if value == nil then
+        -- open: the icon back on its holder, as always
+        if icon.gateClip and icon:GetParent() == icon.gateClip then
+            icon:SetParent(holder); icon:SetAllPoints(holder)
+        end
+        icon.gated = false
+        return
+    end
+    if not icon.gateBar then
+        local bar = CreateFrame("StatusBar", nil, holder)
+        bar:SetAllPoints(holder)
+        bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        bar:SetStatusBarColor(0, 0, 0, 0)
+        local clip = CreateFrame("Frame", nil, holder)
+        clip:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+        clip:SetPoint("BOTTOMRIGHT", bar:GetStatusBarTexture(), "BOTTOMRIGHT", 0, 0)
+        pcall(clip.SetClipsChildren, clip, true)
+        icon.gateBar, icon.gateClip = bar, clip
+    end
+    icon.gateClip:SetFrameLevel(holder:GetFrameLevel() + 1)
+    if icon:GetParent() ~= icon.gateClip then icon:SetParent(icon.gateClip); icon:SetAllPoints(holder) end
+    icon.gateBar:SetMinMaxValues((at or 1) - 1, at or 1)
+    if not pcall(icon.gateBar.SetValue, icon.gateBar, value) then icon.gateBar:SetValue(at or 1) end
+    icon.gated = true
+end
 local finInfo = {}              -- what the last finisher check saw (for the debug print)
 -- Blizzard's crowd-control icon (plate.UnitFrame.AurasFrame.CrowdControlListFrame) sits right
 -- under the level badge, where Claw goes. Same handling as the hunter crescent: moved beside the
@@ -513,6 +545,31 @@ end
 -- Rebirth used to be a slot here; it now lives in the buff widgets (Modules/Widgets/Buffs.lua).
 local MOVED = { Rebirth = true }
 
+-- Skills that only work from behind the target. Addons can't see where you stand, so two signs
+-- stand in for it: a mob faces whoever it is attacking (targeting you: you are in front of it),
+-- and the game's "You must be behind your target" when one of these fails (then: not behind, for a
+-- moment, or until the target changes).
+-- Known ones are listed; any other skill the game turns down with that message is learned and
+-- treated the same from then on (db.behindLearned), so a server's own rules are picked up too.
+local BEHIND = { Shred = true, Ravage = true, Pounce = true, Backstab = true, Ambush = true, Garrote = true }
+local notBehindUntil = 0
+local lastTry = { name = nil, t = 0 }        -- the skill you last tried, to pin a "behind" error on
+local function NeedsBehind(name)
+    return name and (BEHIND[name] or (db and db.behindLearned and db.behindLearned[name])) or false
+end
+local function FacingYou()
+    if not (UnitExists and UnitExists("target")) then return false end
+    local ok, v = pcall(UnitIsUnit, "targettarget", "player")
+    v = ok and Plain(v) or nil
+    return v == true
+end
+local function BehindBlocked(s)
+    if not (db and db.behind ~= false and NeedsBehind(s.name)) then return nil end
+    if GetTime() < notBehindUntil then return "not behind the target (the game said so)" end
+    if FacingYou() then return "your target is facing you" end
+    return nil
+end
+
 -- ready?, and why not
 local function Ready(s)
     if MOVED[s.name] then return false, "moved to the buff widgets" end
@@ -521,6 +578,8 @@ local function Ready(s)
     if usable == nil then return false, "no answer from the game" end
     if not usable then return false, noPower and "not enough energy" or "not usable" end
     if InRange(s) == false then return false, "out of range" end
+    local behind = BehindBlocked(s)
+    if behind then return false, behind end
     local cd = OnCooldown(s)
     if cd then return false, "on cooldown" end
     local tail = extraWhy and (" - " .. extraWhy) or ""
@@ -610,8 +669,19 @@ local function Finisher()
     wipe(finInfo)
     local combo, energy, maxE = ComboPoints(), Num(UnitPower, "player", EnergyType()), Num(UnitPowerMax, "player", EnergyType())
     finInfo.combo, finInfo.energy, finInfo.maxEnergy = combo, energy, maxE
-    if not (combo and energy and maxE) then return nil, "combo points or energy are hidden by the game" end
     local need = db.finisherPoints or 5
+    -- energy hidden (in combat) but combo points and the maximum readable: Bite is shown through a
+    -- gate the game opens at full energy (see Gate), without the addon reading the number
+    if combo and maxE and energy == nil then
+        if combo < need then return nil, combo .. " of " .. need .. " combo points" end
+        if db.finBite == false then return nil, "energy hidden, and Bite is switched off" end
+        if not Known(BITE) then return nil, "Ferocious Bite is not learned" end
+        local ok, raw = pcall(UnitPower, "player", EnergyType())
+        if not ok or raw == nil then return nil, "energy unknown" end
+        finInfo.gate, finInfo.gateAt = raw, maxE
+        return "bite", combo .. " combo points; shown at full energy (energy hidden: the game decides)"
+    end
+    if not (combo and energy and maxE) then return nil, "combo points or energy are hidden by the game" end
     if combo < need then return nil, combo .. " of " .. need .. " combo points" end
     if energy >= maxE then
         if db.finBite == false then return nil, "full energy, but Bite is switched off" end
@@ -1001,8 +1071,10 @@ local function Update()
     else
         kind, fwhy, bigSkill = BigKind(SlotValue(st, "lb"))
     end
+    local gateL, gateAtL = finInfo.gate, finInfo.gateAt      -- set by Finisher() when energy is hidden
     fin.kind, fin.why = kind, fwhy
     fin.wanted = kind ~= nil
+    Gate(fin, finHolder, (kind == "bite") and gateL or nil, gateAtL)
     if fin.wanted then
         fin.skill = (kind == "shift") and SHIFT or (kind == "skill") and bigSkill or BITE
         Paint(fin, true)
@@ -1027,9 +1099,11 @@ local function Update()
     -- the centre big icon (our own plates only): a skill, or the set's own rule like the left one
     local cb = sktools and SlotValue(st, "cb") or NONE
     cfin.wanted, cfin.why, cfin.kind = false, sktools and "no skill chosen" or "only on SKTools plates", nil
+    Gate(cfin, cfinHolder, nil)
     if cb ~= NONE then
         local ck, cwhy, csk = BigKind(cb)
         cfin.why, cfin.kind = cwhy, ck
+        Gate(cfin, cfinHolder, (ck == "bite") and finInfo.gate or nil, finInfo.gateAt)
         if ck then
             cfin.wanted = true
             cfin.skill = (ck == "shift") and SHIFT or (ck == "skill") and csk or BITE
@@ -1098,8 +1172,8 @@ local function Update()
         rfinHolder:Hide()
     end
     if cfin.wanted then
-        -- square, 1.5 times the bar's height, standing on the bar's bottom edge at its middle: half
-        -- the bar's height rises above it
+        -- square, 1.5 times the bar's height, centred on the bar: a quarter of the bar's height
+        -- shows above it and a quarter below
         local bh = (cacheAnchor.GetHeight and cacheAnchor:GetHeight()) or 0
         if not (type(bh) == "number" and bh > 0) then bh = ((ns.Plates and ns.Plates.Settings() or {}).height) or 20 end
         local cs = math.floor(bh * 1.5 + 0.5)
@@ -1109,7 +1183,7 @@ local function Update()
         cfinHolder:SetSize(cs, cs)
         cfin.glow:SetSize(cs * 1.9, cs * 1.9)
         cfinHolder:ClearAllPoints()
-        cfinHolder:SetPoint("BOTTOM", cacheAnchor, "BOTTOM", db.cx or 0, db.cy or 0)
+        cfinHolder:SetPoint("CENTER", cacheAnchor, "CENTER", db.cx or 0, db.cy or 0)
         cfin:Show()
         cfinHolder:Show()
     elseif cfinHolder:IsShown() then
@@ -1161,7 +1235,44 @@ pcall(driver.RegisterEvent, driver, "UPDATE_SHAPESHIFT_FORM")
 pcall(driver.RegisterEvent, driver, "SPELLS_CHANGED")
 pcall(driver.RegisterEvent, driver, "PLAYER_REGEN_DISABLED")
 pcall(driver.RegisterEvent, driver, "PLAYER_REGEN_ENABLED")
-driver:SetScript("OnEvent", function(_, event)
+pcall(driver.RegisterEvent, driver, "UI_ERROR_MESSAGE")
+pcall(driver.RegisterEvent, driver, "UNIT_TARGET")
+pcall(driver.RegisterUnitEvent or driver.RegisterEvent, driver, "UNIT_SPELLCAST_SENT", "player")
+pcall(driver.RegisterUnitEvent or driver.RegisterEvent, driver, "UNIT_SPELLCAST_FAILED", "player")
+driver:SetScript("OnEvent", function(_, event, a, b, ...)
+    if event == "UI_ERROR_MESSAGE" then
+        -- (error type, message) in newer clients; (message) in older ones
+        local msg = type(b) == "string" and b or (type(a) == "string" and a) or nil
+        local want = _G.SPELL_FAILED_NOT_BEHIND or "You must be behind your target"
+        if msg and (msg == want or msg:find("behind", 1, true)) then
+            notBehindUntil = GetTime() + 1.5
+            -- the skill just tried needs it: remember that, for next time
+            if db and lastTry.name and GetTime() - lastTry.t < 1 and not BEHIND[lastTry.name] then
+                db.behindLearned = db.behindLearned or {}
+                db.behindLearned[lastTry.name] = true
+            end
+        end
+        return
+    elseif event == "UNIT_SPELLCAST_SENT" or event == "UNIT_SPELLCAST_FAILED" then
+        if a ~= "player" then return end
+        -- SENT: unit, target name, cast id, spell id; FAILED: unit, cast id, spell id
+        local id = (event == "UNIT_SPELLCAST_SENT") and select(4, a, b, ...) or select(3, a, b, ...)
+        id = Plain(id)
+        local nm
+        if id and C_Spell and C_Spell.GetSpellInfo then
+            local ok, info = pcall(C_Spell.GetSpellInfo, id)
+            if ok and type(info) == "table" then nm = Plain(info.name) end
+        elseif id and _G.GetSpellInfo then
+            local ok, n = pcall(_G.GetSpellInfo, id)
+            if ok then nm = Plain(n) end
+        end
+        if nm then lastTry.name, lastTry.t = nm, GetTime() end
+        return
+    elseif event == "UNIT_TARGET" then
+        if a ~= "target" then return end
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        notBehindUntil = 0
+    end
     if event == "PLAYER_LOGIN" then
         local root = ns.InitDB().range
         local had = root.feral ~= nil
