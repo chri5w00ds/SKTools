@@ -1,0 +1,66 @@
+## Interface: 16001
+## Title: SKTools
+## Notes: Profession database with map pins, action bar range and resource tint, nameplate quest marks, combo points and a Hunter range crescent, a minimap button box, and cooldown panes with health, power and cast bars. /skt for settings.
+## Author: Scotskoogen-Chris
+## Version: 3.0.1
+## IconTexture: Interface\AddOns\SKTools\Media\Logo
+## SavedVariables: SKToolsDB
+## SavedVariablesPerCharacter: SKToolsCharDB
+## AddonCompartmentFunc: SKTools_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: SKTools_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: SKTools_OnCompartmentLeave
+## X-Category: Interface
+## X-License: GPLv3
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\HereBeDragons\HereBeDragons-2.0.lua
+Libs\HereBeDragons\HereBeDragons-Pins-2.0.lua
+
+Core.lua
+Starter.lua
+Widgets.lua
+Settings.lua
+Profiles.lua
+
+# Profession DB
+Modules\ProfessionDB\Core.lua
+Modules\ProfessionDB\Pins.lua
+Modules\ProfessionDB\Window.lua
+Modules\ProfessionDB\Options.lua
+Modules\ProfessionDB\Data\Leatherworking.lua
+Modules\ProfessionDB\Data\Tailoring.lua
+
+# Action Bar (tint)
+Modules\ActionBar\Tint.lua
+Modules\ActionBar\Hover.lua
+Modules\ActionBar\Options.lua
+
+# Buff widgets (personal buffs, missing class buffs)
+Modules\Widgets\Buffs.lua
+Modules\Widgets\Options.lua
+
+# Cooldown panes (our own display of Blizzard's Cooldown Manager)
+Modules\Cooldowns\Panes.lua
+Modules\Cooldowns\Options.lua
+
+# Nameplate (quest marks, combo points)
+Modules\Nameplate\QuestStarters.lua
+Modules\Nameplate\Plates.lua
+Modules\Nameplate\Marks.lua
+Modules\Nameplate\Combo.lua
+
+# Hunter range detection and the crescent that shows it
+Modules\HunterBar\RangeBar.lua
+Modules\Nameplate\Crescent.lua
+Modules\Nameplate\Totems.lua
+Modules\Nameplate\Feral.lua
+
+# the Nameplates tab (the designer) covers all of the above
+Modules\Nameplate\Options.lua
+Modules\Nameplate\Designer.lua
+
+# Minimap button box
+Modules\ButtonBox\Box.lua
+Modules\ButtonBox\Options.lua
+
