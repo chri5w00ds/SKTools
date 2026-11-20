@@ -812,7 +812,8 @@ local function Layout()
         -- a Shaman has the totem timers there
         if PlayerClass() == "SHAMAN" and ns.Totems then reach = ns.Totems.LeftReach() + 2 end
         ownBite = math.floor((2 * size + STACK_GAP) * 0.7 + 0.5)
-        ownX = -(reach + OWN_GAP + ownBite / 2)
+        -- past the level box, which stands left of the bar
+        ownX = -(reach + OWN_GAP + ownBite / 2) - ((ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0)
         -- the column: icon 1 at the bottom, the last at the top, centred on the bar's middle.
         -- Only the skills you know take a slot, so one not learned yet (Primal Bite before its
         -- level) leaves no hole; a known skill keeps its slot whether or not it is ready
@@ -954,11 +955,10 @@ local function RefreshAnchor(plate)
     end
 end
 
--- centre of the right-hand column, from our bar's right end: past the level box, the same distance
--- the left column keeps from the combo points
+-- centre of the right-hand column, from our bar's right end: the level box moved to the left, so
+-- the column stands right by the bar, the same distance the left column keeps from the combo points
 RightX = function()
-    local p = ns.Plates and ns.Plates.Settings and ns.Plates.Settings() or {}
-    return (p.levelGap or 0) + (p.levelWidth or 34) + OWN_GAP + ownRBite / 2
+    return OWN_GAP + ownRBite / 2
 end
 
 -- icon size for the finisher: as wide as the level box, like Claw and Shred

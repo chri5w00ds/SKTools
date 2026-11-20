@@ -413,7 +413,7 @@ local function Update()
     holder:SetSize(1.5 * s, 4 * s + 3 * gap)
     holder:ClearAllPoints()
     if ours then
-        holder:SetPoint("RIGHT", cacheAnchor, "LEFT", db.x, db.y)
+        holder:SetPoint("RIGHT", cacheAnchor, "LEFT", db.x - ((ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0), db.y)      -- past the level box
     elseif cacheHow == "health bar" then
         holder:SetPoint("LEFT", cacheAnchor, "RIGHT", 4 + db.x, db.y)
     else

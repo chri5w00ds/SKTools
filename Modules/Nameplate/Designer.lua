@@ -299,8 +299,8 @@ local function Build(panel)
     -- meter, with its own on / off in Berry Mode
     local gcdTop = panel:Add(W.Check(panel, "GCD meter", function() return ns.Plates.GcdOn() end,
         function(v) ns.Plates.SetGcdOn(v); PlatesChanged() end, 100), 160, -8)
-    gcdTop.tooltip = "A white line rises across your target's health bar while your global cooldown runs, with steam "
-        .. "trailing under it. Berry Mode keeps its own on / off for this (off until you turn it on)."
+    gcdTop.tooltip = "A dark sweep with a white edge runs round your target's level box while your global cooldown runs, and the box gets a white frame, as on "
+        .. "SKTools-ESO's skill bars. Berry Mode keeps its own on / off for this (off until you turn it on)."
 
     local options = { { value = "auto", text = "My class" } }
     for _, c in ipairs(ns.ClassSets.classes) do options[#options + 1] = c end
@@ -416,10 +416,23 @@ local function Build(panel)
     lv:SetFrameLevel(box:GetFrameLevel() + 1)
     lv.bg = Tex(lv, "BACKGROUND"); lv.bg:SetAllPoints(); Paint(lv.bg, { 0.25, 0.25, 0.25 })
     W.Border(lv, 0.75, 0.77, 0.80, 1, 1)
-    -- a still of the GCD meter: the line partway up, steam under it
-    lv.steam = Tex(bar, "OVERLAY", MEDIA .. "GcdSteam1"); lv.steam:SetDrawLayer("OVERLAY", -2)    -- on the bar, under the line
-    lv.gline = Tex(lv, "OVERLAY"); lv.gline:SetVertexColor(1, 1, 1, 1)
-    bar.gline = Tex(bar, "OVERLAY"); bar.gline:SetDrawLayer("OVERLAY", -1); bar.gline:SetVertexColor(1, 1, 1, 1)  -- the line runs the whole plate
+    -- a still of the GCD meter: the sweep partway round (a very long cooldown, started long ago, so
+    -- it stands still at about 60% left)
+    do
+        local okS, sw = pcall(CreateFrame, "Cooldown", nil, lv, "CooldownFrameTemplate")
+        if okS and sw then
+            pcall(sw.SetDrawEdge, sw, true); pcall(sw.SetDrawBling, sw, false)
+            pcall(sw.SetHideCountdownNumbers, sw, true)
+            pcall(sw.SetSwipeTexture, sw, "Interface\\Buttons\\WHITE8X8")
+            pcall(sw.SetEdgeTexture, sw, "Interface\\Cooldown\\edge")
+            pcall(sw.SetEdgeColor, sw, 1, 1, 1, 1)
+            lv.sweep = sw
+        end
+        -- the white frame the box gets while the GCD runs
+        lv.ring = CreateFrame("Frame", nil, lv)
+        lv.ring:SetFrameLevel(lv:GetFrameLevel() + 1)
+        W.Border(lv.ring, 1, 1, 1, 1, 2)
+    end
     lv.top = CreateFrame("Frame", nil, lv); lv.top:SetAllPoints(); lv.top:SetFrameLevel(lv:GetFrameLevel() + 2)
     lv.text = Label(lv.top, 10, "CENTER"); lv.text:SetText("13")
     -- cast bar, with Blizzard's crowd-control icon on its right end
@@ -631,8 +644,10 @@ local function Build(panel)
         local outer = 4 + bz / 2 + fsz / 2 + 6 + bz
         local rsz = F().rsize or fsz
         local rbz = math.floor((2 * rsz + 2) * 0.7 + 0.5)
-        local leftExt = ((ns.Combo.LeftReach and ns.Combo.LeftReach()) or 18) + outer
-        local rightExt = (p.levelGap or 0) + lw + 4 + rbz / 2 + rsz / 2 + 6 + rbz
+        -- the level box stands left of the bar, so the left side's parts stand past it
+        local LE = (p.levelGap or 0) + lw
+        local leftExt = LE + ((ns.Combo.LeftReach and ns.Combo.LeftReach()) or 18) + outer
+        local rightExt = 4 + rbz / 2 + rsz / 2 + 6 + rbz
         local sc = Clamp(466 / (w + leftExt + rightExt), 0.5, 1.6)
         -- and the centre big icon drawn under the sample (below the cast bar) must fit the height
         local setNowC = CurrentSet()
@@ -654,22 +669,24 @@ local function Build(panel)
         bar.pct:SetFont(FONT, ns.Plates.ReadoutSize(h, p.fontSize or 11), "OUTLINE")
         bar.pct:ClearAllPoints(); bar.pct:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
 
-        lv:ClearAllPoints(); lv:SetPoint("LEFT", bar, "RIGHT", (p.levelGap or 0) - 8, 0); lv:SetSize(lw + 8, h)
-        lv.text:ClearAllPoints(); lv.text:SetPoint("CENTER", lv, "RIGHT", -lw / 2, 0)
+        lv:ClearAllPoints(); lv:SetPoint("RIGHT", bar, "LEFT", 8 - (p.levelGap or 0), 0); lv:SetSize(lw + 8, h)
+        lv.text:ClearAllPoints(); lv.text:SetPoint("CENTER", lv, "LEFT", lw / 2, 0)
         -- the level in its difficulty colour (13 against your own level) and the meter, when they are on
         lv.text:SetTextColor(ns.Plates.LevelColor(13))
         local on = ns.Plates.GcdOn()
-        lv.gline:SetShown(false); lv.steam:SetShown(on); bar.gline:SetShown(on)   -- line and steam: on the health bar
-        if on then
-            local y = math.floor((h - 2) * 0.55)
-            lv.gline:ClearAllPoints(); lv.gline:SetPoint("BOTTOMLEFT", lv, "BOTTOMRIGHT", -lw + 3, y); lv.gline:SetSize(lw - 6, 1.5)
-            bar.gline:ClearAllPoints()
-            bar.gline:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 2, y + 1)
-            bar.gline:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -2, y + 1)
-            bar.gline:SetHeight(1.5)
-            lv.steam:ClearAllPoints(); lv.steam:SetPoint("TOPLEFT", bar.gline, "BOTTOMLEFT", 0, 0); lv.steam:SetPoint("TOPRIGHT", bar.gline, "BOTTOMRIGHT", 0, 0)
-            lv.steam:SetHeight((h - 2) * 0.45)
-            lv.steam:SetAlpha(0.8)
+        if lv.ring then
+            lv.ring:SetShown(on)
+            lv.ring:ClearAllPoints(); lv.ring:SetPoint("TOPLEFT", lv, "TOPLEFT", 0, 0); lv.ring:SetSize(lw, h)
+        end
+        if lv.sweep then
+            lv.sweep:SetShown(on)
+            if on then
+                lv.sweep:ClearAllPoints()
+                lv.sweep:SetPoint("TOPLEFT", lv, "TOPLEFT", 1, -1); lv.sweep:SetSize(lw - 2, h - 2)
+                pcall(lv.sweep.SetSwipeColor, lv.sweep, 0, 0, 0, (p.gcdDark or 85) / 100)
+                local long = 1000000
+                pcall(lv.sweep.SetCooldown, lv.sweep, GetTime() - long * 0.4, long)
+            end
         end
 
         local ch = p.castHeight or 18
@@ -703,8 +720,8 @@ local function Build(panel)
         quest:ClearAllPoints(); quest:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, on and (sh + 5) or 2); quest:SetSize(18, 18)
         local m = mdb() or {}
         quest.starter:SetAlpha((m.show and m.show.starter) and 1 or 0.25)
-        quest.kill:ClearAllPoints(); quest.kill:SetPoint("BOTTOM", lv, "TOPRIGHT", -lw / 2, 3)
-        quest.loot:ClearAllPoints(); quest.loot:SetPoint("TOP", lv, "BOTTOMRIGHT", -lw / 2, -3)
+        quest.kill:ClearAllPoints(); quest.kill:SetPoint("BOTTOM", lv, "TOPLEFT", lw / 2, 3)
+        quest.loot:ClearAllPoints(); quest.loot:SetPoint("TOP", lv, "BOTTOMLEFT", lw / 2, -3)
         quest.kill:SetAlpha(m.counters and 1 or 0.25); quest.loot:SetAlpha(m.counters and 1 or 0.25)
 
         -- the class set
@@ -716,14 +733,15 @@ local function Build(panel)
         local reach = (ns.Combo.LeftReach and ns.Combo.LeftReach()) or 18
         if has.combo then
             local s = k.size or 10
-            local step = 2 * math.asin(math.min((s + 2) / 96, 1))
+            local R = ns.Combo.OwnCurve or 58
+            local step = 2 * math.asin(math.min((s + 2) / (2 * R), 1))
             combo:ClearAllPoints(); combo:SetSize(reach, 4 * (s + 2) + s)
-            combo:SetPoint("RIGHT", bar, "LEFT", k.x or 0, k.y or 0)
+            combo:SetPoint("RIGHT", bar, "LEFT", (ns.Combo.OwnX and ns.Combo.OwnX(k.x, k.y) or (k.x or 0)) - LE, k.y or 0)
             local c = k.color or { 1, 0.16, 0.13 }
             for i, d in ipairs(combo.dots) do
                 local phi = (i - 3) * step
-                local x = -(2 + s / 2 + 48 * (math.cos(phi) - math.cos(2 * step)))
-                local y = 48 * math.sin(phi)
+                local x = -(2 + s / 2 + R * (math.cos(phi) - math.cos(2 * step)))
+                local y = R * math.sin(phi)
                 for name, t in pairs(d) do
                     t:ClearAllPoints(); t:SetSize(s, s); t:SetPoint("CENTER", combo, "RIGHT", x, y)
                     if name == "fill" then t:SetVertexColor(c[1], c[2], c[3], 1); t:SetShown(i <= 3) end
@@ -736,8 +754,7 @@ local function Build(panel)
         local bite = math.floor((2 * fs + 2) * 0.7 + 0.5)
         if setNow and setNow.key == "hunter" then reach = 32 * ((z.size or 46) / 46) + 2 end
         if has.totems and ns.Totems then reach = ns.Totems.LeftReach() + 2 end
-        local fx = -(reach + 4 + bite / 2)
-        local rxs = (p.levelGap or 0) + lw + 4 + bite / 2
+        local fx = -(reach + 4 + bite / 2) - LE
         local beside = fs / 2 + 6 + bite / 2          -- the big icons stand this far out from their stacks
         local SL = ns.Feral.Slots
         local setKey = setNow and setNow.key or "cat"
@@ -774,7 +791,7 @@ local function Build(panel)
         -- the right side, at its own size
         local rs = f.rsize or fs
         local rbite = math.floor((2 * rs + 2) * 0.7 + 0.5)
-        local rx2 = (p.levelGap or 0) + lw + 4 + rbite / 2
+        local rx2 = 4 + rbite / 2                 -- right by the bar: the level box is on the left now
         local rbeside = rs / 2 + 6 + rbite / 2
         local fsKeep, biteKeep = fs, bite
         fs, bite = rs, rbite
@@ -794,7 +811,7 @@ local function Build(panel)
             local t = ns.Totems.Settings() or ns.TOTEM_DEFAULTS
             local s, gap = t.size or 16, t.gap or 2
             tot:ClearAllPoints(); tot:SetSize(1.5 * s, 4 * s + 3 * gap)
-            tot:SetPoint("RIGHT", bar, "LEFT", t.x or 0, t.y or 0)
+            tot:SetPoint("RIGHT", bar, "LEFT", (t.x or 0) - LE, t.y or 0)
             for i, o in ipairs(ns.Totems.Offsets(s, gap, 4)) do
                 local b = tot.boxes[i]
                 b.edge:ClearAllPoints(); b.edge:SetSize(s + 2, s + 2); b.edge:SetPoint("CENTER", tot, "RIGHT", o.x, o.y)
@@ -819,7 +836,7 @@ local function Build(panel)
         if has.crescent then
             local kk = (z.size or 46) / 46
             cres:ClearAllPoints(); cres:SetSize(32 * kk, 64 * kk)
-            cres:SetPoint("RIGHT", bar, "LEFT", z.x or 0, z.y or 0)
+            cres:SetPoint("RIGHT", bar, "LEFT", (z.x or 0) - LE, z.y or 0)
             local c = z.colors and z.colors.shoot or { 0.2, 0.85, 0.3 }
             cres.fill:SetVertexColor(c[1], c[2], c[3], 1)
         end
@@ -922,9 +939,10 @@ local function Build(panel)
     do -- the same switch as at the top (Berry Mode keeps its own)
         local c = s:Add(W.Check(s, "GCD meter on your target", function() return ns.Plates.GcdOn() end,
             function(v) ns.Plates.SetGcdOn(v); PlatesChanged() end, CW), C3, -188)
-        c.tooltip = "A white line rises across your target's health bar while your global cooldown runs, with steam "
-            .. "trailing under it. Hidden between GCDs. Berry Mode keeps its own on / off for this."
+        c.tooltip = "A dark sweep with a white edge runs round your target's level box while your global cooldown runs, and the box gets a white frame, as on "
+            .. "SKTools-ESO's skill bars. Hidden between GCDs. Berry Mode keeps its own on / off for this."
     end
+    PSlider(s, C3, "GCD sweep darkness", "gcdDark", 20, 100, 5, W.percentInt, -236)
     Check(s, "Elite dragon by the name", "eliteIcon", -212,
         "The game's elite dragon left of the mob's name, which moves right to make room: gold for elites "
         .. "and bosses, silver for rares and rare elites.")

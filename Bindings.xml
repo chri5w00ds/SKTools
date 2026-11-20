@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="SKTOOLS_SOUND_IN_BACKGROUND" header="SKTOOLS" category="ADDONS">
+		SKTools_ToggleSoundInBackground()
+	</Binding>
+</Bindings>

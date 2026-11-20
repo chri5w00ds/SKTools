@@ -2,7 +2,7 @@
 ## Title: SKTools
 ## Notes: Profession database with map pins, action bar range and resource tint, nameplate quest marks, combo points and a Hunter range crescent, a minimap button box, and cooldown panes with health, power and cast bars. /skt for settings.
 ## Author: Scotskoogen-Chris
-## Version: 3.2.3
+## Version: 3.5.3
 ## IconTexture: Interface\AddOns\SKTools\Media\Logo
 ## SavedVariables: SKToolsDB
 ## SavedVariablesPerCharacter: SKToolsCharDB
@@ -67,4 +67,8 @@ Modules\Nameplate\Designer.lua
 # Minimap button box
 Modules\ButtonBox\Box.lua
 Modules\ButtonBox\Options.lua
+
+# Keybinds (keys for things the game has none for; Bindings.xml loads by itself)
+Modules\Keybinds\Keybinds.lua
+Modules\Keybinds\Options.lua
 

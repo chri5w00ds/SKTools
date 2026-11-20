@@ -1267,6 +1267,26 @@ local function DrawIconPane(key, label)
     state.panes[key] = #entries .. " icons in " .. #rows .. " rows"
 end
 
+-- how much healing is on its way to you. The game's own heal prediction calculator first (what
+-- Blizzard's bars use since Midnight): it takes heal absorbs off the incoming heals and stops them
+-- at your missing health. The raw incoming number only when it is missing: that one counts every
+-- heal in full, so it can show more than you will get.
+local healCalc, healHow = nil, "-"
+local function IncomingHeal()
+    if _G.CreateUnitHealPredictionCalculator and _G.UnitGetDetailedHealPrediction then
+        if healCalc == nil then
+            local ok, c = pcall(CreateUnitHealPredictionCalculator)
+            healCalc = ok and c or false
+        end
+        if healCalc and pcall(UnitGetDetailedHealPrediction, "player", nil, healCalc) then
+            local ok, amount = pcall(healCalc.GetIncomingHeals, healCalc)
+            if ok and amount ~= nil then healHow = "the game's calculator"; return amount end
+        end
+    end
+    healHow = "raw incoming heals"
+    return _G.UnitGetIncomingHeals and Ask(UnitGetIncomingHeals, "player")
+end
+
 -- healing on its way (a heal being cast on you, yours or anyone's), as on Blizzard's bars: a lighter
 -- segment starting where the health fill ends, as long as the heal is, cut off at the bar's end. It
 -- works on hidden numbers too: a bar as wide as the health bar, on the same scale, filled to the heal.
@@ -1299,7 +1319,7 @@ local function HealPrediction(p, maxHP)
     p.heal:SetAlpha(0.75)
     p.heal:SetSize(hb:GetWidth(), hb:GetHeight())
     pcall(p.heal.SetMinMaxValues, p.heal, 0, maxHP)
-    local incoming = _G.UnitGetIncomingHeals and Ask(UnitGetIncomingHeals, "player")
+    local incoming = IncomingHeal()
     if incoming == nil or not pcall(p.heal.SetValue, p.heal, incoming) then p.heal:SetValue(0) end
 end
 
@@ -1608,6 +1628,13 @@ ns.Cooldowns = {
         print(("cooldown panes: %s; Blizzard's Cooldown Manager %s"):format((On() and "on" or "off") .. (ns.BerryMode() and " (Berry Mode)" or ""), state.blizzard))
         for _, k in ipairs({ "block", "essential", "buffs", "utility", "items", "bars" }) do
             print(("  %s: %s"):format(k, state.panes[k] or "-"))
+        end
+        do
+            local function Show(v) if v == nil then return "-" end; local pv = Plain(v); return pv and tostring(math.floor(pv + 0.5)) or "hidden" end
+            local amount = IncomingHeal()
+            local raw = _G.UnitGetIncomingHeals and Ask(UnitGetIncomingHeals, "player")
+            local absorbs = _G.UnitGetTotalHealAbsorbs and Ask(UnitGetTotalHealAbsorbs, "player")
+            print(("  heal prediction: %s (from %s); raw incoming %s, heal absorbs %s"):format(Show(amount), healHow, Show(raw), Show(absorbs)))
         end
         local main, extra = Powers()
         print(("  powers: %s%s; casting: %s"):format(POWER_KEY[main] or tostring(main), extra and (" + " .. (POWER_KEY[extra] or tostring(extra))) or "", tostring(cast.active)))

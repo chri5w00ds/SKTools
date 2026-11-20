@@ -3,10 +3,10 @@
 
   Every enemy nameplate is redrawn as a small set of frames of our own:
 
-      [ health bar: name on the left, percent over value on the right ] [ level ] [ ! ]
-      [ spell icon | cast bar: spell name                              ]
-                                                  kill count above the level box,
-                                                  loot count below it
+      [ level ] [ health bar: name on the left, percent over value on the right ] [ ! ]
+                [ spell icon | cast bar: spell name                              ]
+      kill count above the level box,
+      loot count below it
 
   Colour: bosses purple, casters light blue, everything else green. Players use
   their class colour, friendly units grey-blue, tapped mobs grey. Your target is
@@ -45,7 +45,8 @@ ns.PLATES_DEFAULTS = {
     levelGap    = 0,             -- bar to level box: 0 = joined to the bar
     eliteIcon   = true,          -- the game's elite dragon left of the name: gold = elite or boss, silver = rare
     levelColors = true,          -- the level number coloured like the game does: red, orange, yellow, green; white = no XP
-    gcd         = true,          -- GCD meter in your target's level box: a line rising through it with steam under it
+    gcd         = true,          -- GCD meter in your target's level box: a dark radial sweep while it runs
+    gcdDark     = 85,            -- how dark the sweep is (%); a white edge rides it and the box gets a white frame
     cast        = true,
     castHeight  = 18,
     castGap     = 2,
@@ -559,45 +560,28 @@ local function Create(plate)
     lv.bg:SetTexture(SOLID); lv.bg:SetAllPoints()
     Gradient(lv.bg, { 0.25, 0.25, 0.25 }, 0.5)
     lv.lines = Lines(lv, 0.75, 0.77, 0.80, 1, 1)
-    -- GCD meter: a white line rising from the bottom of the box to the top, steam trailing under it.
-    -- The line rides the top edge of an invisible vertical bar, so the game's own timer can drive it
-    -- when it keeps the numbers to itself (in combat).
+    -- GCD meter: a dark radial sweep over the box while your global cooldown runs, receding clockwise
+    -- (as on SKTools-ESO's skill bars), with a white line on its edge and a white frame round the box.
+    -- The game's own cooldown spiral draws it, so it runs from the
+    -- game's timer when the numbers are hidden (in combat).
     local g = CreateFrame("Frame", nil, lv)
-    pcall(g.SetClipsChildren, g, true)          -- the steam stays inside the box
+    pcall(g.SetClipsChildren, g, true)          -- the sweep stays inside the box
+    local okS, sw = pcall(CreateFrame, "Cooldown", nil, g, "CooldownFrameTemplate")
+    if not okS or not sw then sw = CreateFrame("Cooldown", nil, g) end
+    sw:SetAllPoints(g)
+    pcall(sw.SetDrawEdge, sw, true)             -- a white line rides the sweep's moving edge
+    pcall(sw.SetDrawBling, sw, false)
+    pcall(sw.SetHideCountdownNumbers, sw, true)
+    pcall(sw.SetSwipeTexture, sw, SOLID)
+    pcall(sw.SetEdgeTexture, sw, "Interface\\Cooldown\\edge")
+    pcall(sw.SetEdgeColor, sw, 1, 1, 1, 1)
+    g.sweep = sw
     g:Hide()
-    g.bar = CreateFrame("StatusBar", nil, g)
-    g.bar:SetAllPoints()
-    g.bar:SetStatusBarTexture(SOLID)
-    pcall(g.bar.SetOrientation, g.bar, "VERTICAL")
-    g.bar:SetMinMaxValues(0, 1)
-    g.bar:SetValue(0)
-    g.bar:SetStatusBarColor(1, 1, 1, 0)
-    local fill = g.bar:GetStatusBarTexture()
-    g.steam1 = g.bar:CreateTexture(nil, "ARTWORK")
-    g.steam1:SetTexture(MEDIA .. "GcdSteam1")
-    g.steam2 = g.bar:CreateTexture(nil, "ARTWORK", nil, 1)
-    g.steam2:SetTexture(MEDIA .. "GcdSteam2")
-    g.line = g.bar:CreateTexture(nil, "OVERLAY")
-    g.line:SetColorTexture(1, 1, 1, 1)
-    g.fill = fill
     lv.gcd = g
-    -- the line itself runs the length of the health bar (not into the level box):
-    -- in a frame of its own (the meter clips to the level box), over the bar's fill, under its text
-    -- with its steam trailing under it; the meter in the level box only drives it, unseen
-    g.long = CreateFrame("Frame", nil, f)
-    g.long:SetFrameLevel(f:GetFrameLevel() + 3)
-    pcall(g.long.SetClipsChildren, g.long, true)       -- the steam stays inside the health bar
-    local inner = CreateFrame("Frame", nil, g.long)
-    inner:SetAllPoints(g.long)
-    g.long.inner = inner
-    g.long.line = inner:CreateTexture(nil, "OVERLAY")
-    g.long.line:SetColorTexture(1, 1, 1, 1)
-    g.steam1:Hide(); g.steam2:Hide(); g.line:Hide()    -- nothing of the meter shows in the level box
-    g.steam1 = inner:CreateTexture(nil, "ARTWORK")
-    g.steam1:SetTexture(MEDIA .. "GcdSteam1")
-    g.steam2 = inner:CreateTexture(nil, "ARTWORK", nil, 1)
-    g.steam2:SetTexture(MEDIA .. "GcdSteam2")
-    g.long:Hide()
+    -- and a white frame round the box while it runs, so the GCD shows from the corner of your eye
+    g.ring = CreateFrame("Frame", nil, lv)
+    g.ring.lines = Lines(g.ring, 1, 1, 1, 1, 2)
+    g.ring:Hide()
     -- the level number sits above the meter
     lv.top = CreateFrame("Frame", nil, lv)
     lv.top:SetAllPoints()
@@ -689,32 +673,17 @@ local function Layout(pl)
     pl.pct:ClearAllPoints(); pl.pct:SetPoint("RIGHT", pl.top, "RIGHT", -6, 0)
 
     local lv, lw = pl.lv, db.levelWidth
-    -- the box reaches back under the bar's right end, so the bar sits on top of it
+    -- the level box stands left of the bar; it reaches in under the bar's left end, so the bar sits
+    -- on top of it
     local OVER = 8
-    lv:ClearAllPoints(); lv:SetPoint("LEFT", f, "RIGHT", db.levelGap - OVER, 0); lv:SetSize(lw + OVER, h)
+    lv:ClearAllPoints(); lv:SetPoint("RIGHT", f, "LEFT", OVER - db.levelGap, 0); lv:SetSize(lw + OVER, h)
     local g = lv.gcd
-    g:ClearAllPoints(); g:SetPoint("TOPRIGHT", lv, "TOPRIGHT", -1, -1); g:SetSize(lw - 2, h - 2)
+    g:ClearAllPoints(); g:SetPoint("TOPLEFT", lv, "TOPLEFT", 1, -1); g:SetSize(lw - 2, h - 2)
     g:SetFrameLevel(lv:GetFrameLevel() + 3)
-    local inset = 2
-    g.line:ClearAllPoints()
-    g.line:SetPoint("BOTTOMLEFT", g.fill, "TOPLEFT", inset, -1); g.line:SetPoint("BOTTOMRIGHT", g.fill, "TOPRIGHT", -inset, -1)
-    g.line:SetHeight(1.5)
-    g.line:SetAlpha(0)                                  -- the long line below does the drawing
-    -- the long line: its height from the meter's fill, its ends at the health bar's edges (the meter
-    -- starts levelGap + 1 px right of the bar's right end); its steam under it, in the bar
-    local L = g.long
-    L:ClearAllPoints(); L:SetAllPoints(f)
-    L.line:ClearAllPoints()
-    L.line:SetPoint("BOTTOMLEFT", g.fill, "TOPLEFT", -(w + db.levelGap + 1) + inset, -1)
-    L.line:SetPoint("BOTTOMRIGHT", g.fill, "TOPLEFT", -(db.levelGap + 1) - inset, -1)
-    L.line:SetHeight(1.5)
-    for _, t in ipairs({ g.steam1, g.steam2 }) do
-        t:ClearAllPoints()
-        t:SetPoint("TOPLEFT", L.line, "BOTTOMLEFT", 0, 0); t:SetPoint("TOPRIGHT", L.line, "BOTTOMRIGHT", 0, 0)
-        t:SetHeight(math.max(4, (h - 2) * 0.45))
-    end
+    g.ring:ClearAllPoints(); g.ring:SetPoint("TOPLEFT", lv, "TOPLEFT", 0, 0); g.ring:SetSize(lw, h)
+    g.ring:SetFrameLevel(lv:GetFrameLevel() + 5)
     local small = math.max(8, db.fontSize - 1)        -- the level number and the cast timer
-    lv.text:ClearAllPoints(); lv.text:SetPoint("CENTER", lv, "RIGHT", -lw / 2, 0)
+    lv.text:ClearAllPoints(); lv.text:SetPoint("CENTER", lv, "LEFT", lw / 2, 0)
     lv.text:SetWidth(lw - 2)
     lv.text:SetFont(FONT, small, "OUTLINE")
 
@@ -739,8 +708,8 @@ local function Layout(pl)
     end
     if not redDone then sw.red:SetColorTexture(sr[1], sr[2], sr[3], 0.85) end
     sw.pip:SetSize(sh * 2, sh * 4.5)                -- 8 x 18 on the default 4-high strip
-    pl.kill:ClearAllPoints(); pl.kill:SetPoint("BOTTOMRIGHT", lv, "TOPRIGHT", 0, 2)
-    pl.loot:ClearAllPoints(); pl.loot:SetPoint("TOPRIGHT", lv, "BOTTOMRIGHT", 0, -2)
+    pl.kill:ClearAllPoints(); pl.kill:SetPoint("BOTTOMLEFT", lv, "TOPLEFT", 0, 2)
+    pl.loot:ClearAllPoints(); pl.loot:SetPoint("TOPLEFT", lv, "BOTTOMLEFT", 0, -2)
 
     -- the quest-item icon: over the right end of the debuff row (which fills from the left), its
     -- right edge on the bar's right end and its bottom level with the debuffs' bottom
@@ -1596,27 +1565,7 @@ end
 
 local GCD_SPELL = 61304          -- the game's own "global cooldown" spell
 local gcd = { how = "idle" }     -- start/dur when the game tells us; obj when it only gives its timer
-local gcdCurves
 local ReadGcd
-local function GcdCurves()
-    if gcdCurves ~= nil then return gcdCurves or nil end
-    gcdCurves = false
-    if not (C_CurveUtil and C_CurveUtil.CreateCurve) then return nil end
-    local E = _G.Enum
-    local function curve(points, step)
-        local ok, c = pcall(C_CurveUtil.CreateCurve)
-        if not ok or not c then return nil end
-        if step and E and E.LuaCurveType and E.LuaCurveType.Step and c.SetType then pcall(c.SetType, c, E.LuaCurveType.Step) end
-        for _, pt in ipairs(points) do pcall(c.AddPoint, c, pt[1], pt[2]) end
-        return c
-    end
-    -- shown while any time is left; and the line's height from the share of the GCD gone by
-    gcdCurves = {
-        shown = curve({ { 0, 0 }, { 0.01, 1 }, { 3600, 1 } }, true),
-        elapsed = curve({ { 0, 0 }, { 1, 1 } }),
-    }
-    return gcdCurves
-end
 
 -- ask the game where the GCD is: after you cast, and whenever cooldowns change. In order:
 --   1. the game's own "global cooldown" spell (Forever may not have it)
@@ -1670,50 +1619,30 @@ local function GcdOn()
     return db.gcd ~= false
 end
 
-local GcdDrawBox
 local function GcdDraw(pl)
-    GcdDrawBox(pl)
-    -- the long line goes with the meter
     local g = pl.lv.gcd
-    if g.long then
-        local on = g:IsShown()
-        if on then pcall(function() g.long:SetAlpha(g:GetAlpha()) end) end
-        if g.long:IsShown() ~= on then g.long:SetShown(on) end
-    end
-end
-GcdDrawBox = function(pl)
-    local g = pl.lv.gcd
-    if not GcdOn() or not pl.isTarget or gcd.how == "idle" then
-        if g:IsShown() then g:Hide() end
-        return
-    end
-    local now = GetTime()
+    local function Off() if g:IsShown() then g:Hide(); g.ring:Hide() end; g.key = nil end
+    if not GcdOn() or not pl.isTarget or gcd.how == "idle" then return Off() end
+    local now, sw = GetTime(), g.sweep
+    pcall(sw.SetSwipeColor, sw, 0, 0, 0, (db.gcdDark or 85) / 100)
     if gcd.how == "plain" then
-        local t = (now - gcd.start) / gcd.dur
-        if t >= 1 or t < 0 then gcd.how = "idle"; g:Hide(); return end
-        g.bar:SetValue(t)
-        g:SetAlpha(1)
+        if now - gcd.start >= gcd.dur or now < gcd.start then gcd.how = "idle"; return Off() end
+        local key = gcd.start .. ":" .. gcd.dur
+        if g.key ~= key then g.key = key; pcall(sw.SetCooldown, sw, gcd.start, gcd.dur) end
         pl.gcdPath = "numbers"
     else
         -- no GCD lasts 2 seconds: past that the timer is stale
-        if now - (gcd.since or 0) > 2 then gcd.how = "idle"; g:Hide(); return end
-        local obj, c = gcd.obj, GcdCurves()
-        local done = false
-        for _, try in ipairs({
-            { "elapsed share", function() g.bar:SetValue(obj:GetElapsedPercent()) end },
-            { "elapsed curve", function() g.bar:SetValue(obj:EvaluateElapsedPercent(c.elapsed)) end },
-        }) do
-            if pcall(try[2]) then pl.gcdPath = try[1]; done = true; break end
+        if now - (gcd.since or 0) > 2 then gcd.how = "idle"; return Off() end
+        local key = "timer:" .. tostring(gcd.since)
+        if g.key ~= key then
+            g.key = key
+            if not (sw.SetCooldownFromDurationObject and pcall(sw.SetCooldownFromDurationObject, sw, gcd.obj)) then
+                pl.gcdPath = "none worked"; return Off()
+            end
         end
-        if not done then pl.gcdPath = "none worked"; g:Hide(); return end
-        -- hidden once no time is left (the game decides)
-        if not (c and c.shown and pcall(function() g:SetAlpha(obj:EvaluateRemainingDuration(c.shown)) end)) then g:SetAlpha(1) end
+        pl.gcdPath = "the game's timer"
     end
-    -- the steam: two layers drifting against each other, so it seems to rise and curl
-    local a = 0.5 + 0.5 * math.sin(now * 5.3)
-    g.steam1:SetAlpha(0.55 + 0.35 * a)
-    g.steam2:SetAlpha(0.9 - 0.35 * a)
-    if not g:IsShown() then g:Show() end
+    if not g:IsShown() then g:Show(); g.ring:Show() end
 end
 
 -- the last few plates added and removed, for /skt platelist
@@ -1884,6 +1813,9 @@ ns.Plates = {
     LevelColor = function(lvl) if not db then return 1, 1, 1 end return LevelColor(lvl) end,
     Gcd = function() return gcd end,
     GcdOn = function() return GcdOn() end,
+    -- how far left of the bar's left end the level box reaches: the combo points, crescent, totems
+    -- and the left icons stand past it
+    LeftEdge = function() return ((db and db.levelGap) or 0) + ((db and db.levelWidth) or 34) end,
     SetGcdOn = function(v)
         if not db then return end
         if ns.BerryMode() then db.gcdBerry = v and true or false else db.gcd = v and true or false end

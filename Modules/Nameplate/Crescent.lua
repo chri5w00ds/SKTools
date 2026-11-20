@@ -251,7 +251,7 @@ local function Update()
         -- on the same arc as the combo points: its right edge is the left end of the bar
         local k = db.size / 46
         holder:SetSize(32 * k, 64 * k)
-        holder:SetPoint("RIGHT", cacheAnchor, "LEFT", db.x, db.y)
+        holder:SetPoint("RIGHT", cacheAnchor, "LEFT", db.x - ((ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0), db.y)      -- past the level box
     elseif cacheHow == "health bar" then
         -- no level found: sit just past the bar's right end
         holder:SetPoint("CENTER", cacheAnchor, "RIGHT", 16 + db.x, db.y)

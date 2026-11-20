@@ -40,7 +40,9 @@ local BASE_RX, BASE_RY = 25, 20
 -- neighbour, so all five read as one group that stays clear of the icons above and below the badge.
 local TIGHT_CURVE, TIGHT_GAP = 48, 2
 local boxW, boxH = 26, 16            -- the level box the dots sit beside (measured on the plate)
-local LEFT_GAP = 2                   -- on our own plates: dots this far off the left end of the bar
+local LEFT_GAP = 2                   -- on our own plates: dots this far off the level box's left edge
+local OWN_CURVE = 58                 -- on our own plates the curve is a little flatter (wider radius)
+local COUNTER_H, COUNTER_GAP = 14, 2 -- the kill / loot boxes above and below the level box (Plates.lua)
 local side = "right"                 -- "left" while the plate is ours
 local GLOW_SCALE = 2.6
 
@@ -307,22 +309,47 @@ local growlInfo = "-"
 -- (top dot first). Each step turns TIGHT_GAP + dot size worth of arc along a curve of
 -- radius TIGHT_CURVE that bends back towards the badge. The whole cluster is pushed right
 -- if needed so the outer dots clear the icons above and below the level box.
-local function ClusterPositions(s)
-    if db.tight == false and side ~= "left" then return nil end
-    local step = 2 * math.asin(math.min((s + TIGHT_GAP) / (2 * TIGHT_CURVE), 1))
-    local bend = TIGHT_CURVE * (1 - math.cos(2 * step))          -- how far the outer dots curve in
+local function ClusterPositions(s, left)
+    if left == nil then left = (side == "left") end
+    if db.tight == false and not left then return nil end
+    local R = left and OWN_CURVE or TIGHT_CURVE
+    local step = 2 * math.asin(math.min((s + TIGHT_GAP) / (2 * R), 1))
+    local bend = R * (1 - math.cos(2 * step))                     -- how far the outer dots curve in
     local cx = math.max(BASE_RX + db.radius, boxW / 2 + 1 + s / 2 + bend)
-    if side == "left" then cx = LEFT_GAP + s / 2 + bend end       -- outer dots almost touch the bar
+    if left then cx = LEFT_GAP + s / 2 + bend end                 -- outer dots almost touch the level box
     local px, py = {}, {}
     for i = 1, MAX do
         local k = 3 - i
         local phi = k * step
-        px[i] = cx - TIGHT_CURVE * (1 - math.cos(phi))
-        if side == "left" then px[i] = -px[i] end                    -- mirrored: the curve bends towards the bar on the right
-        py[i] = TIGHT_CURVE * math.sin(phi)
-        if side == "left" then py[i] = -py[i] end                    -- on our plates the points fill from the bottom up
+        px[i] = cx - R * (1 - math.cos(phi))
+        if left then px[i] = -px[i] end                              -- mirrored: the curve bends towards the bar on the right
+        py[i] = R * math.sin(phi)
+        if left then py[i] = -py[i] end                              -- on our plates the points fill from the bottom up
     end
-    return px, py, (side == "left") and -cx or cx
+    return px, py, left and -cx or cx
+end
+
+-- on our plates: the cluster's x (from the level box's left edge) with your nudge, moved left as far
+-- as needed so no dot level with the kill / loot boxes reaches over them (1 px clear, dark edge
+-- included). Dots level with the level box itself may still sit over it.
+local function OwnX(x, y)
+    x, y = x or 0, y or 0
+    local px, py = ClusterPositions(db.size, true)
+    local p = ns.Plates and ns.Plates.Settings and ns.Plates.Settings() or {}
+    local h = p.height or 20
+    local lo, hi = h / 2 + COUNTER_GAP, h / 2 + COUNTER_GAP + COUNTER_H
+    local half = (db.size + 4) / 2
+    local worst
+    for i = 1, MAX do
+        local top, bot = py[i] + y + half, py[i] + y - half
+        local level = (top > lo and bot < hi) or (top > -hi and bot < -lo)
+        if level then
+            local right = x + px[i] + half
+            if not worst or right > worst then worst = right end
+        end
+    end
+    if worst and worst > -1 then x = x - (worst + 1) end
+    return x
 end
 
 local function Style()
@@ -417,7 +444,8 @@ local function Update()
     holder:ClearAllPoints()
     if how == "sktools" then
         -- our plate: hugging the left end of the bar, scaled with it
-        holder:SetPoint("CENTER", anchor, "LEFT", db.x, db.y)
+        -- (past the level box, which stands left of the bar)
+        holder:SetPoint("CENTER", anchor, "LEFT", OwnX(db.x, db.y) - ((ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0), db.y)
     elseif how == "health bar" then
         -- no level found: sit just past the bar's right end
         holder:SetPoint("CENTER", anchor, "RIGHT", 16 + db.x, db.y)
@@ -516,10 +544,15 @@ ns.Combo = {
     -- how far left of the bar's left end the cluster reaches (middle dot's outer edge)
     LeftReach = function()
         local s = db and db.size or 10
-        local step = 2 * math.asin(math.min((s + TIGHT_GAP) / (2 * TIGHT_CURVE), 1))
-        local bend = TIGHT_CURVE * (1 - math.cos(2 * step))
-        return LEFT_GAP + s / 2 + bend + s / 2
+        local step = 2 * math.asin(math.min((s + TIGHT_GAP) / (2 * OWN_CURVE), 1))
+        local bend = OWN_CURVE * (1 - math.cos(2 * step))
+        -- and however far the cluster was moved left to clear the kill / loot boxes
+        local pushed = db and (db.x or 0) - OwnX(db.x, db.y) or 0
+        return LEFT_GAP + s / 2 + bend + s / 2 + pushed
     end,
+    -- for the settings sample: the curve on our plates, and the cluster's x once clear of the boxes
+    OwnCurve = OWN_CURVE,
+    OwnX = function(x, y) return OwnX(x, y) end,
     Dots = function() return dots end,
     ResetCurves = function() litCurve, whiteCurve = nil, nil end,
     Mode = Mode,
