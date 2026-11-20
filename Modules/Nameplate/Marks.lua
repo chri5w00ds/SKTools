@@ -726,3 +726,6 @@ SlashCmdList.SKTOOLSMARKS = function(msg)
     RefreshAll()
     ns.RefreshSettings()
 end
+
+-- timed by /skt cpu
+ns.Profile("Quest marks", f)

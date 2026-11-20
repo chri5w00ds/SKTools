@@ -260,6 +260,8 @@ local function LinePool(parent)
         return t
     end
     function pool:Done() for i = self.n + 1, #self.list do self.list[i]:Hide() end; self.n = 0 end
+    -- after drawing: hide whatever was not used this time (keeps the count)
+    function pool:Trim() for i = self.n + 1, #self.list do self.list[i]:Hide() end end
     return pool
 end
 ----------------------------------------------------------------------
@@ -302,11 +304,15 @@ local function RingPool(p)
         return r
     end
     function pool:Done()
+        self:Trim()
+        self.n = 0
+    end
+    -- after drawing: hide the rings not used this time (keeps the count)
+    function pool:Trim()
         for i = self.n + 1, #self.list do
             for _, t in ipairs(self.list[i].corner) do t:Hide() end
             for _, t in ipairs(self.list[i].edge) do t:Hide() end
         end
-        self.n = 0
     end
     return pool
 end
@@ -665,7 +671,20 @@ end
 
 -- feed one of our icons from one of Blizzard's: its cooldown (and how it is drawn), its count text,
 -- and its spell alert, as the game sets them
+-- Once an icon is linked to an item, the hooks carry everything over as Blizzard sets it: nothing to
+-- do again each pass but the glow. The full setup runs again when the icon gets another item, or
+-- every couple of seconds as a safety net.
+local mirroredBy = {}         -- [item] = the icon it was last set up on
 local function Mirror(item, icon)
+    local now = GetTime()
+    if icon.mirrored == item and mirroredBy[item] == icon and now - (icon.mirrorAt or 0) < 2 then
+        HookAlerts()                                    -- (one check, until the alerts are hooked)
+        itemIcon[item] = icon
+        ShowGlow(icon, alertOn[item])
+        return
+    end
+    if mirroredBy[item] and mirroredBy[item] ~= icon then mirroredBy[item].mirrored = nil end
+    mirroredBy[item], icon.mirrored, icon.mirrorAt = icon, item, now
     HookAlerts()
     -- this icon now stands for this item
     if icon.item ~= item then
@@ -751,6 +770,47 @@ local function MirrorBar(item, bar)
     end
 end
 
+-- Is a spell one this character has? (A spell can be set up in Blizzard's Cooldown Manager before the
+-- character learns it; for a few seconds after logging in Blizzard shows its frame, empty.) Asked of
+-- every way the game has; a spell any of them knows counts, and with none to ask it counts too.
+local function Known(id)
+    if not id then return false end
+    local asked = false
+    -- (a fixed count: a missing one must not end the list early, as ipairs would)
+    local fns = { _G.IsPlayerSpell, _G.IsSpellKnownOrOverridesKnown, _G.IsSpellKnown,
+                  C_SpellBook and C_SpellBook.IsSpellKnown or nil }
+    for i = 1, 4 do
+        local fn = fns[i]
+        if type(fn) == "function" then
+            asked = true
+            local ok, v = pcall(fn, id)
+            if ok and Plain(v) then return true end
+        end
+    end
+    if _G.IsSpellKnown then                               -- pet spells
+        local ok, v = pcall(IsSpellKnown, id, true)
+        if ok and Plain(v) then return true end
+    end
+    return not asked
+end
+local function ItemKnown(it)
+    if Known(ItemSpell(it)) then return true end
+    local info = it.cooldownInfo or ItemCall(it, "GetCooldownInfo")
+    if type(info) == "table" then
+        if Known(Plain(info.spellID)) or Known(Plain(info.overrideSpellID)) then return true end
+    end
+    return false
+end
+-- the picture on Blizzard's own icon: nil while it has none (not set up yet), "?" when it can't be told
+local function BlizzTexture(it)
+    local ic = it.Icon
+    if type(ic) == "table" and type(ic.GetTexture) ~= "function" and type(ic.Icon) == "table" then ic = ic.Icon end
+    if type(ic) ~= "table" or type(ic.GetTexture) ~= "function" then return "?" end
+    local ok, t = pcall(ic.GetTexture, ic)
+    if not ok then return "?" end
+    return t
+end
+
 -- Blizzard's icons of one pane, in their order
 local function Items(viewerName)
     local v = _G[viewerName]
@@ -759,7 +819,20 @@ local function Items(viewerName)
     if not ok or type(items) ~= "table" then return {} end
     local list = {}
     for _, it in ipairs(items) do
-        if type(it) == "table" and (it.cooldownID or it.cooldownInfo or ItemSpell(it)) then list[#list + 1] = it end
+        -- only the ones Blizzard shows: a spell set up in the Cooldown Manager that this character
+        -- has not learned yet (or a spare frame) is kept hidden there, and would be an empty frame here
+        local shown = true
+        if type(it) == "table" and it.IsShown then
+            local ok, v = pcall(it.IsShown, it)
+            if ok and v == false then shown = false end
+        end
+        -- and not one with no picture yet, or (cooldowns only: buffs come from anywhere) a spell this
+        -- character does not have
+        if shown and type(it) == "table" and (it.cooldownID or it.cooldownInfo or ItemSpell(it))
+            and BlizzTexture(it) ~= nil
+            and (viewerName == VIEWERS.buffs or viewerName == VIEWERS.bars or ItemKnown(it)) then
+            list[#list + 1] = it
+        end
     end
     table.sort(list, function(a, b) return (Plain(a.layoutIndex) or 0) < (Plain(b.layoutIndex) or 0) end)
     return list
@@ -789,10 +862,16 @@ end
 -- Range and resource for a spell
 ----------------------------------------------------------------------
 
+local targetAt, targetThere
 local function SpellRange(spellID)
     if not spellID then return nil end
-    local ok, e = pcall(UnitExists, "target")
-    if not (ok and Plain(e)) then return nil end
+    local now = GetTime()
+    if targetAt ~= now then
+        targetAt = now
+        local ok, e = pcall(UnitExists, "target")
+        targetThere = ok and Plain(e) and true or false
+    end
+    if not targetThere then return nil end
     local fn = (C_Spell and C_Spell.IsSpellInRange) or _G.IsSpellInRange
     local r = Plain(Ask(fn, spellID, "target"))
     if r == false or r == 0 then return false end
@@ -800,10 +879,17 @@ local function SpellRange(spellID)
     return nil
 end
 -- short of power for it? returns the cost, your power (maybe hidden) and its colour key; nil when not short
+local costCache = {}           -- [spellID] = { at, costs }: a spell's costs change rarely (forms, talents)
 local function SpellShort(spellID)
     if not spellID then return nil end
-    local fn = (C_Spell and C_Spell.GetSpellPowerCost) or _G.GetSpellPowerCost
-    local costs = Plain(Ask(fn, spellID))
+    local now = GetTime()
+    local cc = costCache[spellID]
+    if not cc or now - cc[1] > 1 then
+        local fn = (C_Spell and C_Spell.GetSpellPowerCost) or _G.GetSpellPowerCost
+        cc = { now, Plain(Ask(fn, spellID)) }
+        costCache[spellID] = cc
+    end
+    local costs = cc[2]
     if type(costs) ~= "table" then return nil end
     for _, c in ipairs(costs) do
         local cost, ptype = Plain(c.cost), Plain(c.type)
@@ -999,28 +1085,37 @@ end
 local function Paint(e)
     local f = e.icon
     f.spellID, f.name = e.spellID, e.name
-    local tex = e.texture
-    if not tex and e.spellID then
-        local fn = (C_Spell and C_Spell.GetSpellTexture) or _G.GetSpellTexture
-        tex = Ask(fn, e.spellID)
+    -- the picture: looked up and set only when the icon shows another spell (or once a second)
+    local texFor = tostring(e.texture or e.spellID)
+    if f.texFor ~= texFor or GetTime() - (f.texAt or 0) > 1 then
+        f.texFor, f.texAt = texFor, GetTime()
+        local tex = e.texture
+        if not tex and e.spellID then
+            local fn = (C_Spell and C_Spell.GetSpellTexture) or _G.GetSpellTexture
+            tex = Ask(fn, e.spellID)
+        end
+        pcall(f.tex.SetTexture, f.tex, tex or "Interface\\Icons\\INV_Misc_QuestionMark")
     end
-    pcall(f.tex.SetTexture, f.tex, tex or "Interface\\Icons\\INV_Misc_QuestionMark")
     local dim = e.inactive == true
     local inRange = (not dim) and SpellRange(e.spellID)
     local cost, power, pkey
     if not dim and not e.sample then cost, power, pkey = SpellShort(e.spellID) end
     if e.sample and e.sampleFill then cost, power, pkey = 1, e.sampleFill, "energy" end
     local red = (inRange == false) or e.sampleRed
-    f.tex:SetDesaturated(dim or cost ~= nil)
-    if red then f.tex:SetVertexColor(1, 0.3, 0.3)
-    elseif dim then f.tex:SetVertexColor(0.45, 0.45, 0.45)
-    elseif cost then f.tex:SetVertexColor(0.7, 0.7, 0.7)
-    else f.tex:SetVertexColor(1, 1, 1) end
-    f:SetAlpha(dim and 0.75 or 1)
+    local look = (red and "r" or "-") .. (dim and "d" or "-") .. (cost and "c" or "-")
+    if f.look ~= look then
+        f.look = look
+        f.tex:SetDesaturated(dim or cost ~= nil)
+        if red then f.tex:SetVertexColor(1, 0.3, 0.3)
+        elseif dim then f.tex:SetVertexColor(0.45, 0.45, 0.45)
+        elseif cost then f.tex:SetVertexColor(0.7, 0.7, 0.7)
+        else f.tex:SetVertexColor(1, 1, 1) end
+        f:SetAlpha(dim and 0.75 or 1)
+    end
     if cost then
         FillResourceFrame(f.res, power, cost, red and COLORS.range or COLORS[pkey] or COLORS.other)
     else
-        f.res:Hide()
+        if f.res:IsShown() then f.res:Hide() end
     end
     if not e.item then ShowGlow(f, false) end
     if e.sample then
@@ -1250,21 +1345,50 @@ end
 -- Drawing it all
 ----------------------------------------------------------------------
 
+-- Layout only when it changes. Each pane remembers what its layout was built from (sizes, place,
+-- the icons in it, the pixel size); the same again, and only the icons' contents are refreshed. Built
+-- again anyway every few seconds, and at once after a settings change or a UI scale change.
+local layoutGen = 0
+local RELAYOUT = 5
+local function NeedsLayout(p, s, ...)
+    local parts = { layoutGen, Px(p), tostring(db.snap), tostring(db.grid), tostring(db.unlocked),
+        s.x or 0, s.y or 0, tostring(p.moving), ... }
+    for i = 1, #parts do parts[i] = tostring(parts[i]) end
+    local key = table.concat(parts, "|")
+    local now = GetTime()
+    if p.layoutKey == key and now - (p.layoutAt or 0) < RELAYOUT then return false end
+    p.layoutKey, p.layoutAt = key, now
+    state.layouts = (state.layouts or 0) + 1
+    return true
+end
+local function Forget(p) p.lines:Done(); p.rings:Done(); p.layoutKey = nil end
+
 local function DrawIconPane(key, label)
     local p = panes[key] or MakePane(key, label)
     local s = Settings(key)
-    p.lines:Done(); p.rings:Done()
-    if not PaneOn(key) then p:Hide(); state.panes[key] = On() and "switched off" or nil; return end
+    if not PaneOn(key) then Forget(p); p:Hide(); state.panes[key] = On() and "switched off" or nil; return end
     local entries = Entries(key)
-    if #entries == 0 then p:Hide(); state.panes[key] = "nothing to show (none tracked, or none up)"; return end
-    local rows, h, w = LayIcons(p, entries, Boxes(s.size or 32), s.cap, GROW[key], 0)
-    Place(p, s, w, h, GROW[key] == "up" and "bottom" or "top")
-    -- after placing (the lines are put on whole pixels): a white frame round each icon, rounded at all
-    -- four corners, neighbours sharing a line
-    for _, c in ipairs(p.cells or {}) do Ring(p, c[1], c[2], c[3], c[4], h, true) end
+    if #entries == 0 then Forget(p); p:Hide(); state.panes[key] = "nothing to show (none tracked, or none up)"; return end
+    local ids = {}
+    for i, e in ipairs(entries) do
+        ids[i] = tostring(e.spellID or e.slot or "-") .. ":" .. tostring(e.item or "") .. (e.sample and "s" or "")
+    end
+    if NeedsLayout(p, s, s.size, s.cap, table.concat(ids, ",")) then
+        p.lines:Done(); p.rings:Done()
+        local rows, h, w = LayIcons(p, entries, Boxes(s.size or 32), s.cap, GROW[key], 0)
+        Place(p, s, w, h, GROW[key] == "up" and "bottom" or "top")
+        -- after placing (the lines are put on whole pixels): a white frame round each icon, rounded at
+        -- all four corners, neighbours sharing a line
+        for _, c in ipairs(p.cells or {}) do Ring(p, c[1], c[2], c[3], c[4], h, true) end
+        p.rowCount = #rows
+        -- and the frames left over from a bigger layout go (the pools hide all past what was just drawn)
+        p.lines:Trim(); p.rings:Trim()
+    else
+        for k, e in ipairs(entries) do e.icon = p.icons[k] end      -- the same icons as last time
+    end
     FeedIcons(key, entries)
     p:Show()
-    state.panes[key] = #entries .. " icons in " .. #rows .. " rows"
+    state.panes[key] = #entries .. " icons in " .. (p.rowCount or 0) .. " rows"
 end
 
 -- how much healing is on its way to you. The game's own heal prediction calculator first (what
@@ -1378,17 +1502,20 @@ end
 local function DrawBlock()
     local p = panes.block or MakePane("block", "Cooldowns: health, power, cast bar")
     local s = Settings("block")
-    p.lines:Done(); p.rings:Done()
-    if not PaneOn("block") then p:Hide(); return end
+    if not PaneOn("block") then Forget(p); p:Hide(); return end
     if not p.cast then
         p.cast = MakeBar(p)
-        p.cast:SetScript("OnUpdate", function(self) if cast.active then CastFrame(self) end end)
+        p.cast:SetScript("OnUpdate", ns.Timed("Cooldown panes", function(self) if cast.active then CastFrame(self) end end))
         p.health = MakeBar(p)
         p.power = MakeBar(p)
         p.extra = MakeBar(p)
     end
     SetColor(p.cast, ResColor("cast")); SetColor(p.health, ResColor("health"))
     for _, b in ipairs({ p.health, p.power, p.extra, p.cast }) do ResStyle(b) end
+    local main, extra = Powers()
+    ReadCast()
+    local geo = NeedsLayout(p, s, s.width, s.health, s.power, s.cast, extra and 1 or 0, (cast.active or db.unlocked) and 1 or 0)
+    if geo then p.lines:Done(); p.rings:Done() end
     local trim = Trim(p)
     local w = Boxes(s.width) - trim
     local px = Px(p)
@@ -1396,9 +1523,10 @@ local function DrawBlock()
     local n = 0
     local lastStrip
     local function Strip(b, h)
-        if n > 0 then Seam(p, -w / 2, y - px / 2, w, px) end
         n = n + 1
         lastStrip = b
+        if not geo then y = y + h; return end              -- in place already
+        if n > 1 then Seam(p, -w / 2, y - px / 2, w, px) end
         b:ClearAllPoints()
         b:SetPoint("TOPLEFT", p, "TOP", -w / 2, -y)
         b:SetSize(w, h)
@@ -1411,7 +1539,6 @@ local function DrawBlock()
     local okHM, hm = pcall(UnitHealthMax, "player")
     FillBar(p.health, okH and hp or 0, okHM and hm or 1, HealthPercent())
     HealPrediction(p, okHM and hm or 1)
-    local main, extra = Powers()
     Strip(p.power, Boxes(s.power or 8))
     SetColor(p.power, ResColor(POWER_KEY[main] or "other"))
     local okP, pw = pcall(UnitPower, "player", main)
@@ -1427,7 +1554,6 @@ local function DrawBlock()
         p.extra:Hide()
     end
     -- the cast bar: along the bottom, below whatever bars there are; only while casting (or moving it)
-    ReadCast()
     -- what the cast will spend, on the bar of its power
     CostPrediction(p.power, main)
     if extra then CostPrediction(p.extra, extra) elseif p.extra.costBar then p.extra.costBar:Hide() end
@@ -1454,23 +1580,27 @@ local function DrawBlock()
     else
         p.cast:Hide()
     end
-    -- the bottom bar a pixel shorter: the frame's bottom line lands on a grid line
-    if trim > 0 and lastStrip then
-        lastStrip:SetHeight(lastStrip:GetHeight() - trim)
-        y = y - trim
+    if geo then
+        -- the bottom bar a pixel shorter: the frame's bottom line lands on a grid line
+        if trim > 0 and lastStrip then
+            lastStrip:SetHeight(lastStrip:GetHeight() - trim)
+            y = y - trim
+        end
+        -- placed by its top: the bars grow down
+        Place(p, s, w, y, "top")
+        Ring(p, -w / 2, 0, w, y, y)
+        p.lines:Trim(); p.rings:Trim()              -- leftovers from a taller layout go
     end
-    -- placed by its top: the bars grow down
-    Place(p, s, w, y, "top")
-    Ring(p, -w / 2, 0, w, y, y)
     p:Show()
     state.panes.block = (extra and "form power shown" or "health and power") .. (cast.active and ", casting" or "")
 end
 
+local TimedTracked
 local function DrawBars()
+    TimedTracked = TimedTracked or ns.Timed("Cooldown panes", TrackedFrame)
     local p = panes.bars or MakePane("bars", "Cooldowns: tracked bars")
     local s = Settings("bars")
-    p.lines:Done(); p.rings:Done()
-    if not PaneOn("bars") then p:Hide(); return end
+    if not PaneOn("bars") then Forget(p); p:Hide(); return end
     p.bars = p.bars or {}
     local list = {}
     -- only the bars whose buff is up right now
@@ -1480,7 +1610,9 @@ local function DrawBars()
     if #list == 0 and db.unlocked then
         for i = 1, 3 do list[i] = { sample = true, name = "Tracked bar " .. i, inactive = (i == 3) } end
     end
-    if #list == 0 then p:Hide(); state.panes.bars = "nothing to show (none tracked, or none up)"; return end
+    if #list == 0 then Forget(p); p:Hide(); state.panes.bars = "nothing to show (none tracked, or none up)"; return end
+    local geo = NeedsLayout(p, s, s.width, s.height, #list)
+    if geo then p.lines:Done(); p.rings:Done() end
     local trim = Trim(p)
     local w, h = Boxes(s.width) - trim, Boxes(s.height or 16)
     for i, e in ipairs(list) do
@@ -1492,16 +1624,18 @@ local function DrawBars()
             b.icon = b.iconF:CreateTexture(nil, "ARTWORK"); b.icon:SetAllPoints(); b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             b.bar = MakeBar(b); SetColor(b.bar, COLORS.mana)
             b.name, b.time = b.bar.left, b.bar.right
-            b:SetScript("OnUpdate", TrackedFrame)
+            b:SetScript("OnUpdate", TimedTracked)
             p.bars[i] = b
         end
         b.item = (not e.inactive) and e.item or nil
-        b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", p, "TOP", -w / 2, -(i - 1) * h)
-        b:SetSize(w, h)
-        b.iconF:ClearAllPoints(); b.iconF:SetPoint("TOPLEFT"); b.iconF:SetSize(h, h)
-        b.bar:ClearAllPoints(); b.bar:SetPoint("TOPLEFT", h, 0); b.bar:SetSize(w - h, h)
-        BarFonts(b.bar, h)
+        if geo then
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", p, "TOP", -w / 2, -(i - 1) * h)
+            b:SetSize(w, h)
+            b.iconF:ClearAllPoints(); b.iconF:SetPoint("TOPLEFT"); b.iconF:SetSize(h, h)
+            b.bar:ClearAllPoints(); b.bar:SetPoint("TOPLEFT", h, 0); b.bar:SetSize(w - h, h)
+            BarFonts(b.bar, h)
+        end
         local tex = e.spellID and Ask((C_Spell and C_Spell.GetSpellTexture) or _G.GetSpellTexture, e.spellID)
         pcall(b.icon.SetTexture, b.icon, tex or "Interface\\Icons\\INV_Misc_QuestionMark")
         b.icon:SetDesaturated(e.inactive == true)
@@ -1510,14 +1644,17 @@ local function DrawBars()
         else b.name:SetText(e.name or ""); b.time:SetText(""); b.bar:SetMinMaxValues(0, 1); b.bar:SetValue(e.inactive and 0 or 0.6) end
         if e.inactive and e.item then b.bar:SetValue(0); b.time:SetText("") end
         b:Show()
-        if i > 1 then local px = Px(p); Seam(p, -w / 2, (i - 1) * h - px / 2, w, px) end
+        if geo and i > 1 then local px = Px(p); Seam(p, -w / 2, (i - 1) * h - px / 2, w, px) end
     end
     for i = #list + 1, #p.bars do p.bars[i]:Hide() end
-    -- the last bar a pixel shorter: the frame's bottom line lands on a grid line
-    local total = #list * h - trim
-    if trim > 0 and p.bars[#list] then p.bars[#list]:SetHeight(h - trim); p.bars[#list].bar:SetHeight(h - trim) end
-    Place(p, s, w, total, "top")
-    Ring(p, -w / 2, 0, w, total, total)
+    if geo then
+        -- the last bar a pixel shorter: the frame's bottom line lands on a grid line
+        local total = #list * h - trim
+        if trim > 0 and p.bars[#list] then p.bars[#list]:SetHeight(h - trim); p.bars[#list].bar:SetHeight(h - trim) end
+        Place(p, s, w, total, "top")
+        Ring(p, -w / 2, 0, w, total, total)
+        p.lines:Trim(); p.rings:Trim()              -- leftovers from a longer layout go
+    end
     p:Show()
     state.panes.bars = #list .. " bars"
 end
@@ -1584,7 +1721,16 @@ for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLC
     pcall(driver.RegisterUnitEvent or driver.RegisterEvent, driver, e, "player")
 end
 pcall(driver.RegisterEvent, driver, "PLAYER_REGEN_ENABLED")
+for _, e in ipairs({ "SPELLS_CHANGED", "UPDATE_SHAPESHIFT_FORM", "PLAYER_TALENT_UPDATE", "TRAIT_CONFIG_UPDATED" }) do
+    pcall(driver.RegisterEvent, driver, e)
+end
+pcall(driver.RegisterEvent, driver, "UI_SCALE_CHANGED")
+pcall(driver.RegisterEvent, driver, "DISPLAY_SIZE_CHANGED")
 driver:SetScript("OnEvent", function(_, event)
+    if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then layoutGen = layoutGen + 1 end
+    -- spells, form or talents changed: costs are looked up afresh
+    if event == "SPELLS_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" or event == "PLAYER_TALENT_UPDATE"
+        or event == "TRAIT_CONFIG_UPDATED" then wipe(costCache); return end
     if event == "PLAYER_LOGIN" then
         local root = ns.InitDB().range
         root.cooldowns = root.cooldowns or {}
@@ -1603,7 +1749,7 @@ end)
 
 ns.Cooldowns = {
     Settings = function() return db end,
-    Refresh = function() Update() end,
+    Refresh = function() layoutGen = layoutGen + 1; Update() end,
     On = function() return On() end,
     ResColor = ResColor,
     GRADIENT_MAX = GRADIENT_MAX, CYLINDER_MAX = CYLINDER_MAX,
@@ -1616,6 +1762,7 @@ ns.Cooldowns = {
         Update()
     end,
     Panes = function() return panes end,
+    Layouts = function() return state.layouts or 0 end,
     Rows = Rows,
     ResetPositions = function()
         if not db then return end
@@ -1626,6 +1773,7 @@ ns.Cooldowns = {
     end,
     Debug = function(print)
         print(("cooldown panes: %s; Blizzard's Cooldown Manager %s"):format((On() and "on" or "off") .. (ns.BerryMode() and " (Berry Mode)" or ""), state.blizzard))
+        print(("  layouts built so far: %d (only when something changes)"):format(state.layouts or 0))
         for _, k in ipairs({ "block", "essential", "buffs", "utility", "items", "bars" }) do
             print(("  %s: %s"):format(k, state.panes[k] or "-"))
         end
@@ -1646,6 +1794,45 @@ ns.Cooldowns = {
             if type(pv) == "number" then return ("%.1f"):format(pv) end
             return tostring(pv)
         end
+        -- every frame Blizzard has in each pane, before our filter: what we see of it and whether it is kept
+        for _, key in ipairs({ "essential", "utility", "buffs", "bars" }) do
+            local v = _G[VIEWERS[key]]
+            local raw = {}
+            if type(v) == "table" and v.GetItemFrames then
+                local ok, list = pcall(v.GetItemFrames, v)
+                if ok and type(list) == "table" then raw = list end
+            end
+            local kept = {}
+            for _, it in ipairs(Items(VIEWERS[key]) or {}) do kept[it] = true end
+            print(("  %s: Blizzard has %d frames"):format(key, #raw))
+            for i, it in ipairs(raw) do
+                if type(it) == "table" then
+                    local id = ItemSpell(it)
+                    local nm = id and Ask((C_Spell and C_Spell.GetSpellName) or _G.GetSpellInfo, id)
+                    local okS, shownB = pcall(function() return it:IsShown() end)
+                    local tex = BlizzTexture(it)
+                    print(("    %d. %s (%s): Blizzard shows %s, picture %s, known %s, active %s, layout %s -> %s"):format(i,
+                        tostring(Plain(nm) or "?"), tostring(id), okS and tostring(shownB) or "?",
+                        tex == nil and "none" or (tex == "?" and "can't tell" or tostring(Plain(tex) or "hidden")),
+                        tostring(ItemKnown(it)), tostring(ItemActive(it)), tostring(Plain(it.layoutIndex)),
+                        kept[it] and "KEPT" or "left out"))
+                end
+            end
+        end
+        -- what each of our icon panes shows, icon by icon
+        for _, key in ipairs({ "essential", "utility", "buffs", "items" }) do
+            local p = panes[key]
+            if p and p.icons then
+                for i, f in ipairs(p.icons) do
+                    if f:IsShown() then
+                        local okT, t = pcall(f.tex.GetTexture, f.tex)
+                        print(("  ours [%s] %d: spell %s, picture %s, from %s, frame %s"):format(key, i, tostring(f.spellID),
+                            okT and tostring(Plain(t) or (t == nil and "none" or "hidden")) or "?", tostring(f.texFor),
+                            p:IsShown() and "pane shown" or "pane hidden"))
+                    end
+                end
+            end
+        end
         for key, name in pairs(VIEWERS) do
             for _, it in ipairs(Items(name) or {}) do
                 local id = ItemSpell(it)
@@ -1658,3 +1845,6 @@ ns.Cooldowns = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Cooldown panes", driver)

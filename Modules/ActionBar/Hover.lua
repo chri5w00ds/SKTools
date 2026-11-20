@@ -68,15 +68,36 @@ local function Over(f)
     return ok and r == true
 end
 
--- the mouse over the bar, or over one of its buttons (on older clients the buttons can sit outside it)
-local function Hovered(bar, f)
-    if Over(f) and f:IsVisible() then return true end
-    if not bar.buttons then return false end
-    for i = 1, bar.count or 12 do
-        local b = _G[bar.buttons .. i]
-        if b and b.IsVisible and b:IsVisible() and Over(b) then return true end
+-- The mouse over the bar: one check a bar, against the bar's area - its frame, grown to take in its
+-- buttons (on older clients they can sit outside it). The area is measured once a second, not on
+-- every check; the check itself is a little arithmetic on the cursor's place.
+local areas = {}              -- [bar key] = { left, bottom, right, top } in screen pixels
+local function Measure(bar, f)
+    local L, B, R, T
+    local function Take(fr)
+        if not (fr and fr.GetLeft) then return end
+        local okV, vis = pcall(fr.IsVisible, fr)
+        if not (okV and vis) then return end
+        local s = fr:GetEffectiveScale() or 1
+        local l, b, w, h = fr:GetLeft(), fr:GetBottom(), fr:GetWidth(), fr:GetHeight()
+        if not (l and b and w and h) or w <= 0 or h <= 0 then return end
+        l, b = l * s, b * s
+        local r, t = l + w * s, b + h * s
+        L = L and math.min(L, l) or l; B = B and math.min(B, b) or b
+        R = R and math.max(R, r) or r; T = T and math.max(T, t) or t
     end
-    return false
+    Take(f)
+    if bar.buttons then
+        for i = 1, bar.count or 12 do Take(_G[bar.buttons .. i]) end
+    end
+    areas[bar.key] = L and { L, B, R, T } or false
+end
+local cx, cy = 0, 0           -- the cursor, read once a step
+local function Hovered(bar, f)
+    local a = areas[bar.key]
+    if a == nil then Measure(bar, f); a = areas[bar.key] end
+    if not a then return false end
+    return cx >= a[1] and cx <= a[3] and cy >= a[2] and cy <= a[4]
 end
 
 -- every bar shows while you are placing something on one, in Edit Mode, or with a flyout open
@@ -145,7 +166,10 @@ local function Wanted(bar)
 end
 
 local state = {}             -- [key] = { alpha, lastOver, why }
+local busy = false            -- a bar mid-fade or lingering: keep stepping smoothly
 local function Step(elapsed)
+    busy = false
+    cx, cy = GetCursorPosition()
     local all, allWhy = ShowAll()
     for _, bar in ipairs(ns.HOVER_BARS) do
         local f = BarFrame(bar)
@@ -164,6 +188,7 @@ local function Step(elapsed)
                 local rate = elapsed / math.max(db.fade or 0.15, 0.01)
                 if st.alpha < target then st.alpha = math.min(target, st.alpha + rate)
                 elseif st.alpha > target then st.alpha = math.max(target, st.alpha - rate) end
+                if st.alpha ~= target or (show and not over and not all and not hold) then busy = true end
                 -- Blizzard may set the bar's opacity itself: ours goes back whenever it differs
                 if math.abs((f:GetAlpha() or 1) - st.alpha) > 0.001 then f:SetAlpha(st.alpha) end
                 touched[f] = true
@@ -181,16 +206,25 @@ local function Step(elapsed)
     end
 end
 
+-- Smooth steps (30 a second) only while something moves: the cursor, or a bar fading or lingering.
+-- Otherwise a look ten times a second (Blizzard may set a bar's opacity itself), and the bars'
+-- areas measured again once a second.
 local driver = CreateFrame("Frame")
-local acc = 0
+local acc, measureAcc = 0, 0
+local lastX, lastY
 driver:SetScript("OnUpdate", function(_, elapsed)
-    acc = acc + elapsed
+    acc, measureAcc = acc + elapsed, measureAcc + elapsed
     if acc < 0.03 then return end
+    if not db then acc = 0; return end
+    -- nothing to do while switched off, once the bars have been handed back
+    if not db.enabled and next(touched) == nil then acc = 0; return end
+    if measureAcc >= 1 then measureAcc = 0; wipe(areas) end
+    local x, y = GetCursorPosition()
+    local moved = x ~= lastX or y ~= lastY
+    lastX, lastY = x, y
+    if not (busy or moved) and acc < 0.1 then return end      -- (the time keeps counting)
     local dt = acc
     acc = 0
-    if not db then return end
-    -- nothing to do while switched off, once the bars have been handed back
-    if not db.enabled and next(touched) == nil then return end
     Step(dt)
 end)
 driver:RegisterEvent("PLAYER_LOGIN")
@@ -204,7 +238,7 @@ end)
 
 ns.Hover = {
     Settings = function() return db end,
-    Refresh = function() Step(1) end,
+    Refresh = function() wipe(areas); Step(1) end,
     Reset = function()
         local root = ns.InitDB().range
         root.hover = {}
@@ -225,3 +259,6 @@ ns.Hover = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Action bar fade", driver)

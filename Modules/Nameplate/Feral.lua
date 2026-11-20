@@ -1412,3 +1412,6 @@ ns.Feral = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Class icons", driver)

@@ -1,4 +1,4 @@
--- SKTools: a Profession DB, nameplates, cooldown panes, action bar range and resource tint, the
+-- SKTools: a Profession DB, nameplates, cooldown panes, action bars on mouseover, the
 -- Hunter range crescent and a minimap button box, in one addon for WoW Forever.
 --
 -- This file is the shared core: saved variables, profiles, the settings-tab registry and the slash
@@ -6,7 +6,7 @@
 --
 --   .db     Profession DB
 --   .marks  Nameplate quest marks
---   .range  Nameplates, range crescent (.crescent), action bar tint (.tint), combo points (.combo),
+--   .range  Nameplates, range crescent (.crescent), action bar mouseover (.hover), combo points (.combo),
 --           cooldown panes (.cooldowns), widgets (.buffs) and the rest
 --
 -- And tables that are always account-wide: .minimap, .window, .buttonBox (the minimap button box).
@@ -73,6 +73,9 @@ function ns.InitDB()
     -- Blizzard resource display's settings (that part is gone)
     acc.imported, acc.prd, char.imported = nil, nil, nil
     if type(char.profile) == "table" then char.profile.prd = nil end
+    -- the action bar tint is gone (3.7.0)
+    if type(acc.range) == "table" then acc.range.tint = nil end
+    if type(char.profile) == "table" and type(char.profile.range) == "table" then char.profile.range.tint = nil end
     if type(acc.charProfiles) ~= "table" then acc.charProfiles = {} end
     for _, k in ipairs(PARTS) do
         if type(acc[k]) ~= "table" then acc[k] = {} end
@@ -270,7 +273,7 @@ end)
 
 local TAB_ALIASES = {
     db = "db", database = "db", profession = "db", professions = "db", prof = "db",
-    action = "action", actionbar = "action", bar = "action", tint = "action",
+    action = "action", actionbar = "action", bar = "action", mouseover = "action", hover = "action", fade = "action",
     widgets = "widgets", widget = "widgets", buffs = "widgets",
     cursor = "cursor", mouse = "cursor", glow = "cursor",
     keybinds = "keybinds", keys = "keybinds", binds = "keybinds", bindings = "keybinds",
@@ -284,6 +287,207 @@ local TAB_ALIASES = {
     box = "buttons", buttons = "buttons", buttonbox = "buttons", minimapbuttons = "buttons",
 }
 ns.TAB_ALIASES = TAB_ALIASES
+
+----------------------------------------------------------------------
+-- /skt cpu: how much time each part of the addon takes. Each part's driver frame has its scripts
+-- wrapped (ns.Profile); while a measurement runs, each call is timed. Off, the wrapper costs one
+-- check per call.
+----------------------------------------------------------------------
+local prof = { on = false, t = {}, n = {} }
+local function Clock()
+    if debugprofilestop then return debugprofilestop() end
+    return GetTime() * 1000
+end
+function ns.Timed(name, fn)
+    return function(...)
+        if not prof.on then return fn(...) end
+        local s = Clock()
+        fn(...)
+        prof.t[name] = (prof.t[name] or 0) + (Clock() - s)
+        prof.n[name] = (prof.n[name] or 0) + 1
+    end
+end
+function ns.Profile(name, frame)
+    if not (frame and frame.GetScript) then return end
+    for _, sc in ipairs({ "OnUpdate", "OnEvent" }) do
+        local f = frame:GetScript(sc)
+        if f then frame:SetScript(sc, ns.Timed(name, f)) end
+    end
+end
+----------------------------------------------------------------------
+-- The report log. Every /skt report (cpu and the debug ones) is kept in SKToolsLog, which the game
+-- writes to WTF/Account/<account>/SavedVariables/SKTools.lua at /reload or logout; /skt log shows it
+-- in a window you can copy from. The newest reports are kept, up to LOG_MAX lines.
+----------------------------------------------------------------------
+local LOG_MAX = 3000
+local function Log()
+    if type(SKToolsLog) ~= "table" then SKToolsLog = {} end
+    if type(SKToolsLog.lines) ~= "table" then SKToolsLog.lines = {} end
+    return SKToolsLog.lines
+end
+local function AddReport(title, lines)
+    local log = Log()
+    local stamp = (date and date("%Y-%m-%d %H:%M:%S")) or tostring(GetTime())
+    log[#log + 1] = ("==== %s  /skt %s  (SKTools %s)"):format(stamp, title, tostring(ns.version))
+    for _, l in ipairs(lines) do log[#log + 1] = tostring(l) end
+    log[#log + 1] = ""
+    local extra = #log - LOG_MAX
+    if extra > 0 then
+        local keep = {}
+        for i = extra + 1, #log do keep[#keep + 1] = log[i] end
+        SKToolsLog.lines = keep
+    end
+end
+
+local logWin
+local function LogText()
+    return table.concat(Log(), "\n")
+end
+local BuildLog
+function ns.ShowLog()
+    -- anything going wrong here is said in chat, so it can be passed on
+    local ok, err = pcall(BuildLog)
+    if not ok then ns.Print("the log window could not open: " .. tostring(err)); return end
+end
+BuildLog = function()
+    local W = ns.W
+    if not logWin then
+        local win = CreateFrame("Frame", "SKToolsLogWindow", UIParent)
+        win:SetSize(720, 460)
+        win:SetPoint("CENTER", UIParent, "CENTER", 0, 40)        -- (without a place it was never drawn)
+        win:SetFrameStrata("DIALOG")
+        win:SetToplevel(true)
+        win:EnableMouse(true)
+        win:SetMovable(true)
+        win:SetClampedToScreen(true)
+        win:RegisterForDrag("LeftButton")
+        win:SetScript("OnDragStart", win.StartMoving)
+        win:SetScript("OnDragStop", win.StopMovingOrSizing)
+        W.Skin(win, "dialog")
+        W.TitlePlate(win, "SKTools report log")
+        local close = W.CloseButton(win, function() win:Hide() end)
+        close:SetPoint("TOPRIGHT", -5, -5)
+        tinsert(UISpecialFrames, "SKToolsLogWindow")      -- Esc closes it
+        -- the standard scroll frame with its bar; a plain one, scrolled by the mouse wheel, if the
+        -- client has no such template
+        local okSF, sf = pcall(CreateFrame, "ScrollFrame", nil, win, "UIPanelScrollFrameTemplate")
+        if not okSF or not sf then
+            sf = CreateFrame("ScrollFrame", nil, win)
+            sf:EnableMouseWheel(true)
+            sf:SetScript("OnMouseWheel", function(self, d)
+                local range = self:GetVerticalScrollRange() or 0
+                self:SetVerticalScroll(math.max(0, math.min(range, (self:GetVerticalScroll() or 0) - d * 40)))
+            end)
+        end
+        sf:SetPoint("TOPLEFT", 14, -40)
+        sf:SetPoint("BOTTOMRIGHT", -32, 48)
+        local eb = CreateFrame("EditBox", nil, sf)
+        eb:SetMultiLine(true)
+        eb:SetAutoFocus(false)
+        eb:SetFontObject(_G.ChatFontNormal or _G.GameFontHighlightSmall)
+        eb:SetWidth(660); eb:SetHeight(400)
+        eb:SetScript("OnEscapePressed", function() win:Hide() end)
+        -- read only: typing puts the log back
+        eb:SetScript("OnTextChanged", function(self, user) if user then self:SetText(win.text or "") end end)
+        sf:SetScrollChild(eb)
+        win.edit, win.scroll = eb, sf
+        local all = W.Button(win, "Select all", 120, function()
+            eb:SetFocus(); eb:HighlightText()
+            ns.Print("selected - press Ctrl+C to copy")
+        end)
+        all:SetPoint("BOTTOMLEFT", 14, 14)
+        local clear = W.Button(win, "Clear log", 120, function()
+            SKToolsLog.lines = {}
+            win.text = ""; eb:SetText("")
+        end)
+        clear:SetPoint("LEFT", all, "RIGHT", 8, 0)
+        local note = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        note:SetPoint("LEFT", clear, "RIGHT", 12, 0)
+        note:SetPoint("RIGHT", win, "RIGHT", -14, 0)
+        note:SetJustifyH("LEFT")
+        note:SetText("Also saved to WTF/Account/<account>/SavedVariables/SKTools.lua (written at /reload or logout).")
+        win:Hide()
+        logWin = win
+    end
+    logWin.text = LogText()
+    logWin.edit:SetText(logWin.text)
+    logWin:Show()
+    -- newest at the bottom: scroll there
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function() pcall(function() logWin.scroll:SetVerticalScroll(logWin.scroll:GetVerticalScrollRange()) end) end)
+    end
+end
+
+-- armed by /skt cddebug login: two cooldown reports just after the next login or reload (for things
+-- that only show for a few seconds then)
+do
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_LOGIN")
+    f:SetScript("OnEvent", function()
+        if type(SKToolsLog) ~= "table" or not SKToolsLog.armLogin then return end
+        SKToolsLog.armLogin = nil
+        for _, secs in ipairs({ 1, 6 }) do
+            C_Timer.After(secs, function()
+                if ns.Cooldowns and ns.Cooldowns.Debug then
+                    ns.Report("cddebug (" .. secs .. " s after login)", function(out) ns.Cooldowns.Debug(out) end)
+                end
+            end)
+        end
+    end)
+end
+
+-- run a report: its lines go to the log (not the chat); one line in chat says where it went
+function ns.Report(title, fn, open)
+    local lines = {}
+    local ok, err = pcall(fn, function(...)
+        local parts = { ... }
+        for i = 1, select("#", ...) do parts[i] = tostring(parts[i]) end
+        lines[#lines + 1] = table.concat(parts, " ")
+    end)
+    if not ok then lines[#lines + 1] = "error: " .. tostring(err) end
+    AddReport(title, lines)
+    if open then
+        ns.ShowLog()
+        ns.Print(("/skt %s: %d lines, in the log window"):format(title, #lines))
+    else
+        ns.Print(("/skt %s: %d lines saved to the log - /skt log to see and copy them"):format(title, #lines))
+    end
+end
+
+local function CpuReport(secs, print)
+    local rows, total = {}, 0
+    for name, ms in pairs(prof.t) do rows[#rows + 1] = { name, ms, prof.n[name] or 0 }; total = total + ms end
+    table.sort(rows, function(a, b) return a[2] > b[2] end)
+    print(("CPU over %d seconds: %.2f ms a second in all"):format(secs, total / secs))
+    if #rows == 0 then print("  nothing ran") end
+    for _, r in ipairs(rows) do
+        print(("  %-22s %6.2f ms/s  %3d%%  (%d calls)"):format(r[1], r[2] / secs, total > 0 and math.floor(r[2] / total * 100 + 0.5) or 0, r[3]))
+    end
+    -- the game's own figure for the whole addon, where it has one
+    if C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and Enum and Enum.AddOnProfilerMetric then
+        local ok, v = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON, Enum.AddOnProfilerMetric.RecentAverageTime)
+        if ok and type(v) == "number" then print(("  the game's own measure of SKTools: %.3f ms a frame (recent average)"):format(v)) end
+    end
+end
+function ns.CpuMeasure(secs)
+    if prof.on then ns.Print("already measuring - wait for the report"); return end
+    secs = math.max(2, math.min(120, math.floor(tonumber(secs) or 10)))
+    wipe(prof.t); wipe(prof.n)
+    prof.on = true
+    ns.Print(("measuring CPU for %d seconds - play as normal"):format(secs))
+    C_Timer.After(secs, function()
+        prof.on = false
+        -- opened by itself when out of combat; in a fight, once it is over
+        local inFight = InCombatLockdown and InCombatLockdown()
+        ns.Report("cpu " .. secs, function(out) CpuReport(secs, out) end, not inFight)
+        if inFight then
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self) self:UnregisterAllEvents(); ns.ShowLog() end)
+        end
+    end)
+end
+ns.prof = prof
 
 -- /rl: reload the UI (the game only has /reload)
 SLASH_SKTOOLSRELOAD1 = "/rl"
@@ -301,26 +505,38 @@ SlashCmdList.SKTOOLS = function(msg)
         if SKToolsProfessionDB and SKToolsProfessionDB.Toggle then SKToolsProfessionDB:Toggle() end
     elseif cmd == "minimap" then
         ns.ToggleMinimapButton()                -- opens / closes the button box
+    elseif cmd == "cpu" or cmd:match("^cpu %d+$") then
+        ns.CpuMeasure(cmd:match("^cpu (%d+)$"))
+    elseif cmd == "log" then
+        ns.ShowLog()
+    elseif cmd == "log clear" then
+        Log(); SKToolsLog.lines = {}
+        ns.Print("report log cleared")
     elseif cmd == "platesdebug" then
-        ns.Plates.Debug(function(m) print(m) end)
+        ns.Report(cmd, function(out) ns.Plates.Debug(out) end, true)
     elseif cmd == "platelist" then
-        ns.Plates.List(function(m) print(m) end)
+        ns.Report(cmd, function(out) ns.Plates.List(out) end, true)
     elseif cmd == "feraldebug" or cmd == "icondebug" then
-        if ns.Feral and ns.Feral.Debug then ns.Feral.Debug(function(m) print(m) end) end
+        if ns.Feral and ns.Feral.Debug then ns.Report(cmd, function(out) ns.Feral.Debug(out) end, true) end
+    elseif cmd == "cddebug login" then
+        Log(); SKToolsLog.armLogin = true
+        ns.Print("next login or /reload: a cddebug report 1 s and 6 s in, saved to the log. /rl now, then /skt log.")
     elseif cmd == "cddebug" then
-        if ns.Cooldowns and ns.Cooldowns.Debug then ns.Cooldowns.Debug(function(m) print(m) end) end
+        if ns.Cooldowns and ns.Cooldowns.Debug then ns.Report(cmd, function(out) ns.Cooldowns.Debug(out) end, true) end
     elseif cmd == "totemdebug" then
-        if ns.Totems and ns.Totems.Debug then ns.Totems.Debug(function(m) print(m) end) end
+        if ns.Totems and ns.Totems.Debug then ns.Report(cmd, function(out) ns.Totems.Debug(out) end, true) end
     elseif cmd == "buffdebug" then
-        if ns.Buffs and ns.Buffs.Debug then ns.Buffs.Debug(function(m) print(m) end) end
+        if ns.Buffs and ns.Buffs.Debug then ns.Report(cmd, function(out) ns.Buffs.Debug(out) end, true) end
     elseif cmd == "boxdebug" then
-        if ns.ButtonBox and ns.ButtonBox.Probe then ns.ButtonBox.Probe(function(m) print(m) end) end
+        if ns.ButtonBox and ns.ButtonBox.Probe then ns.Report(cmd, function(out) ns.ButtonBox.Probe(out) end, true) end
     else
         ns.Print("version " .. tostring(ns.version) .. " - commands:")
         print("  /skt  - open or close the settings window")
         print("  /skt db | action | widgets | cursor | keybinds | cooldowns | nameplate | buttons | profiles  - open that settings tab")
         print("  /skt map  - open or close the Profession DB window (also /sdb)")
         print("  /skt minimap  - open or close the minimap button box\n  /skt platesdebug | platelist | icondebug  - print what the game tells the plates / every plate it has / the ready icons\n  /skt buffdebug  - print what the buff widgets see\n  /skt totemdebug - print the totems and Lightning Shield charges seen\n  /skt cddebug    - print what the cooldown panes show")
+        print("  /skt cpu [seconds]  - measure how much CPU each part takes (10 seconds unless you say)")
+        print("  /skt log  - the report log: every /skt report, to read and copy (/skt log clear empties it)")
         print("  Short commands for their own parts: /sdb, /sm, /skr (/rb)")
     end
 end

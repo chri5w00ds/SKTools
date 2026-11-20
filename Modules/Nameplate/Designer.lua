@@ -669,7 +669,7 @@ local function Build(panel)
         bar.pct:SetFont(FONT, ns.Plates.ReadoutSize(h, p.fontSize or 11), "OUTLINE")
         bar.pct:ClearAllPoints(); bar.pct:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
 
-        lv:ClearAllPoints(); lv:SetPoint("RIGHT", bar, "LEFT", 8 - (p.levelGap or 0), 0); lv:SetSize(lw + 8, h)
+        lv:ClearAllPoints(); lv:SetPoint("RIGHT", bar, "LEFT", -(p.levelGap or 0), 0); lv:SetSize(lw, h)
         lv.text:ClearAllPoints(); lv.text:SetPoint("CENTER", lv, "LEFT", lw / 2, 0)
         -- the level in its difficulty colour (13 against your own level) and the meter, when they are on
         lv.text:SetTextColor(ns.Plates.LevelColor(13))

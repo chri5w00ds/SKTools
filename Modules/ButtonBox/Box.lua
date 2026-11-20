@@ -75,7 +75,7 @@ ns.BEE_ACTIONS = {
     { value = "nameplate",  text = "Nameplate settings" },
     { value = "cooldowns",  text = "Cooldowns settings" },
     { value = "widgets",    text = "Widgets settings" },
-    { value = "action",     text = "Action Bar settings" },
+    { value = "action",     text = "Mouseover settings" },
     { value = "dbTab",      text = "Profession DB settings" },
     { value = "profiles",   text = "Profiles" },
     { value = "dbWindow",   text = "Profession DB window" },
@@ -717,6 +717,7 @@ local function Build()
             end
         end
     end)
+    ns.Profile("Button box", driver)
 end
 
 ----------------------------------------------------------------------

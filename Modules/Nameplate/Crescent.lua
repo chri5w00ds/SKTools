@@ -309,3 +309,6 @@ ns.Crescent = {
         print(("crescent: enabled=%s, %s"):format(tostring(db and db.enabled), state))
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Hunter crescent", driver)

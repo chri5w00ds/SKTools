@@ -803,3 +803,6 @@ ns.Buffs = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Buff widgets", driver)

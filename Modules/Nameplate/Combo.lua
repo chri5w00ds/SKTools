@@ -415,6 +415,11 @@ SetPoints = function(v, white)
     end
 end
 
+local placedKey, styleGen = nil, 0
+local function Rgb(c)
+    if type(c) ~= "table" then return "-" end
+    return ("%s,%s,%s"):format(tostring(c[1] or c.r), tostring(c[2] or c.g), tostring(c[3] or c.b))
+end
 local function Update()
     if not holder or not db then return end
     mode = Mode()
@@ -438,21 +443,30 @@ local function Update()
     anchorInfo = how
     side = (how == "sktools") and "left" or "right"
     if how ~= "sktools" then boxW, boxH = BoxSize(anchor, how) end
-    holder:SetParent(how == "sktools" and anchor or plate)
-    holder:SetFrameStrata(plate:GetFrameStrata() or "MEDIUM")
-    holder:SetFrameLevel((plate:GetFrameLevel() or 1) + 20)
-    holder:ClearAllPoints()
-    if how == "sktools" then
-        -- our plate: hugging the left end of the bar, scaled with it
-        -- (past the level box, which stands left of the bar)
-        holder:SetPoint("CENTER", anchor, "LEFT", OwnX(db.x, db.y) - ((ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0), db.y)
-    elseif how == "health bar" then
-        -- no level found: sit just past the bar's right end
-        holder:SetPoint("CENTER", anchor, "RIGHT", 16 + db.x, db.y)
-    else
-        holder:SetPoint("CENTER", anchor, "CENTER", db.x, db.y)
+    -- placed and styled again only when something about it changed (not ten times a second)
+    local LE = (ns.Plates and ns.Plates.LeftEdge and ns.Plates.LeftEdge()) or 0
+    local level = (plate:GetFrameLevel() or 1) + 20
+    local key = table.concat({ tostring(anchor), how, tostring(plate), plate:GetFrameStrata() or "MEDIUM", level,
+        db.x, db.y, LE, db.size, db.radius, boxW, boxH, styleGen, tostring(mode), tostring(previewing),
+        tostring(db.tight), tostring(db.bgAlpha), tostring(db.edge), tostring(db.glow), Rgb(db.color), Rgb(db.growlColor) }, "|")
+    if key ~= placedKey then
+        placedKey = key
+        holder:SetParent(how == "sktools" and anchor or plate)
+        holder:SetFrameStrata(plate:GetFrameStrata() or "MEDIUM")
+        holder:SetFrameLevel(level)
+        holder:ClearAllPoints()
+        if how == "sktools" then
+            -- our plate: hugging the left end of the bar, scaled with it
+            -- (past the level box, which stands left of the bar)
+            holder:SetPoint("CENTER", anchor, "LEFT", OwnX(db.x, db.y) - LE, db.y)
+        elseif how == "health bar" then
+            -- no level found: sit just past the bar's right end
+            holder:SetPoint("CENTER", anchor, "RIGHT", 16 + db.x, db.y)
+        else
+            holder:SetPoint("CENTER", anchor, "CENTER", db.x, db.y)
+        end
+        Style()
     end
-    Style()
 
     if mode == "growl" then
         if previewing then
@@ -487,10 +501,15 @@ end)
 driver:Hide()
 
 driver:RegisterEvent("PLAYER_LOGIN")
-for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT",
+for _, e in ipairs({ "PLAYER_TARGET_CHANGED",
                      "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UPDATE_SHAPESHIFT_FORM",
                      "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "SPELL_UPDATE_COOLDOWN" }) do
     pcall(driver.RegisterEvent, driver, e)
+end
+-- power: yours only (combo points are yours). Every unit's power ticks would otherwise each run a
+-- full update - hundreds a second in a crowd.
+for _, e in ipairs({ "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT" }) do
+    pcall(driver.RegisterUnitEvent or driver.RegisterEvent, driver, e, "player")
 end
 driver:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_TARGET_CHANGED" then cachePlate = nil end
@@ -519,7 +538,7 @@ end)
 
 ns.Combo = {
     Settings = function() return db end,
-    Refresh = function() Style(); Update() end,
+    Refresh = function() styleGen = styleGen + 1; Style(); Update() end,
     Reset = function()
         local root = ns.InitDB().range
         root.combo = {}
@@ -569,3 +588,6 @@ ns.Combo = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Combo points", driver)

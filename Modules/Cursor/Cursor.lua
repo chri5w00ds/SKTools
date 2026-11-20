@@ -94,7 +94,7 @@ local function MakeGlow()
     glow.t = 0
     glow:SetAlpha(0)
     glow:Hide()
-    glow:SetScript("OnUpdate", function(self, elapsed)
+    glow:SetScript("OnUpdate", ns.Timed("Cursor", function(self, elapsed)
         -- follow the cursor: centred a little down and right of its tip, behind the gauntlet
         local x, y = GetCursorPosition()
         local s = UIParent:GetEffectiveScale()
@@ -121,7 +121,7 @@ local function MakeGlow()
         elseif self.tex:GetAlpha() ~= 1 then
             self.tex:SetAlpha(1)
         end
-    end)
+    end))
     Style()
 end
 
@@ -191,3 +191,6 @@ ns.Cursor = {
     GlowFrame = function() return glow end,
     Wanted = function() return GlowWanted() end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Cursor", driver)

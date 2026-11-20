@@ -687,3 +687,6 @@ ns.Totems = {
         end
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Totems", driver)

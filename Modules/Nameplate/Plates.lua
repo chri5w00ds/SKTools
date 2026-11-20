@@ -560,6 +560,19 @@ local function Create(plate)
     lv.bg:SetTexture(SOLID); lv.bg:SetAllPoints()
     Gradient(lv.bg, { 0.25, 0.25, 0.25 }, 0.5)
     lv.lines = Lines(lv, 0.75, 0.77, 0.80, 1, 1)
+    -- where it meets the bar: the box runs on a few pixels under the bar's left end, but only shows
+    -- outside the bar's shape (an inverted copy of the bar's mask, laid over the bar; white beyond
+    -- it). So it fills the bar's rounded corners - the top and bottom lines run straight on, the bar's
+    -- own curved edge is the line between them - and nothing sits behind the bar to show through a
+    -- faded plate. No right edge of its own.
+    lv.join = lv:CreateMaskTexture()
+    lv.joinOk = pcall(lv.join.SetTexture, lv.join, MEDIA .. "PlateMaskInv", "CLAMPTOWHITE", "CLAMPTOWHITE")
+    if lv.joinOk then
+        lv.join:SetAllPoints(pl.bar)
+        lv.bg:AddMaskTexture(lv.join)
+        lv.lines[1]:AddMaskTexture(lv.join); lv.lines[2]:AddMaskTexture(lv.join)
+        lv.lines[4]:Hide()
+    end
     -- GCD meter: a dark radial sweep over the box while your global cooldown runs, receding clockwise
     -- (as on SKTools-ESO's skill bars), with a white line on its edge and a white frame round the box.
     -- The game's own cooldown spiral draws it, so it runs from the
@@ -673,9 +686,11 @@ local function Layout(pl)
     pl.pct:ClearAllPoints(); pl.pct:SetPoint("RIGHT", pl.top, "RIGHT", -6, 0)
 
     local lv, lw = pl.lv, db.levelWidth
-    -- the level box stands left of the bar; it reaches in under the bar's left end, so the bar sits
-    -- on top of it
-    local OVER = 8
+    -- the level box stands left of the bar and runs on under its rounded left end (as far as the
+    -- corners reach: 7 of the mask's 512 px, and a pixel more), masked to the corners (see the box)
+    -- (joined to the bar only: with a gap between them the box keeps to itself)
+    local OVER = (lv.joinOk and (db.levelGap or 0) == 0) and (math.ceil(w * 7 / 512) + 1) or 0
+    lv.lines[4]:SetShown(OVER == 0)
     lv:ClearAllPoints(); lv:SetPoint("RIGHT", f, "LEFT", OVER - db.levelGap, 0); lv:SetSize(lw + OVER, h)
     local g = lv.gcd
     g:ClearAllPoints(); g:SetPoint("TOPLEFT", lv, "TOPLEFT", 1, -1); g:SetSize(lw - 2, h - 2)
@@ -1945,3 +1960,6 @@ ns.Plates = {
                 tostring(_G.UnitCastingDuration ~= nil), tostring(sb.SetTimerDuration ~= nil), tostring(sb.SetAlphaFromBoolean ~= nil)))
     end,
 }
+
+-- timed by /skt cpu
+ns.Profile("Nameplates", driver)

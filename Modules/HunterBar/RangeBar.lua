@@ -6,7 +6,7 @@
   (Modules/Nameplate/Crescent.lua, settings on the Nameplate tab). The bar is
   still here for comparison: /skr bar on brings it back, /skr bar off hides it.
 
-  This file is the range bar. The action bar tint (Modules/ActionBar/Tint.lua)
+  This file is the range bar. (The action bar tint that was here is gone.)
   and keep their settings inside this module's saved table.
   Range bar based on RangeBar (Hunter) by AlwaysFourth
   (https://github.com/AlwaysFourth/RangeBarHunter), MIT license, see LICENSE.
@@ -111,7 +111,7 @@ local function IsHunter()
 end
 
 -- The range bar is about the Hunter dead zone, so it only shows for a Hunter
--- holding a bow, gun or crossbow. The action bar tint works for everyone.
+-- holding a bow, gun or crossbow.
 local RANGED_SUBCLASS = { [2] = true, [3] = true, [18] = true }   -- bow, gun, crossbow
 local function HasRangedWeapon()
     local slot = _G.INVSLOT_RANGED or 18
@@ -1231,19 +1231,6 @@ SlashCmdList["SKTOOLSRANGE"] = function(msg)
         if k then k.enabled = on; ns.Combo.Refresh() end
         Print("combo points " .. (on and "on" or "off")
             .. ((on and ns.Combo and not ns.Combo.Eligible()) and " (only Rogues and Druids have combo points)" or ""))
-    elseif cmd == "tint" and rest:lower() == "debug" then
-        if ns.Tint then ns.Tint.Debug(Print) end
-    elseif cmd == "tint" and rest:lower():match("^range") or cmd == "tint" and rest:lower():match("^resource") then
-        local part, state = rest:lower():match("^(%a+)%s*(%a*)")
-        local t = ns.Tint and ns.Tint.Settings()
-        if t then
-            t[part] = (state == "on"); ns.Tint.Refresh()
-            Print((part == "range" and "out of range" or "resource") .. " tint " .. (t[part] and "on" or "off"))
-        end
-    elseif cmd == "tint" then
-        local t = ns.Tint and ns.Tint.Settings()
-        if t then t.enabled = on; ns.Tint.Refresh() end
-        Print("action bar tint " .. (on and "on" or "off"))
     elseif cmd == "watch" then
         watching = not watching
         lastWatch = nil
@@ -1353,8 +1340,6 @@ SlashCmdList["SKTOOLSRANGE"] = function(msg)
         Print("  |cffffff00/rb plates|r N - nameplate distance used to spot the dead zone (now " .. nameplateMax .. ")")
         Print("  |cffffff00/rb debug|r - show what the range checks report")
         Print("  |cffffff00/rb watch|r - log zone and auto attack changes to chat")
-        Print("  |cffffff00/skr tint|r on/off - action bar tint")
-        Print("  |cffffff00/skr tint range|r on/off , |cffffff00/skr tint resource|r on/off")
         Print("  |cffffff00/skr combo|r on/off , |cffffff00/skr combo debug|r - combo points on your target")
         Print("  |cffffff00/rangebar height|r N , |cffffff00width|r N , |cffffff00alpha|r N")
         Print("  |cffffff00/rangebar max|r N - max ranged range (0 = auto, currently " .. maxRange .. ")")
@@ -1367,3 +1352,6 @@ SlashCmdList["SKTOOLSRANGE"] = function(msg)
 
     ns.RefreshSettings()   -- keep an open settings window in step with chat commands
 end
+
+-- timed by /skt cpu
+ns.Profile("Hunter range bar", driver)
