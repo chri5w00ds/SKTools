@@ -339,6 +339,9 @@ local function AddReport(title, lines)
     end
 end
 
+-- a few lines into the log quietly (no chat line): for tracers that write as things happen
+function ns.LogAdd(title, lines) AddReport(title, lines) end
+
 local logWin
 local function LogText()
     return table.concat(Log(), "\n")
@@ -518,6 +521,12 @@ SlashCmdList.SKTOOLS = function(msg)
         ns.Report(cmd, function(out) ns.Plates.List(out) end, true)
     elseif cmd == "feraldebug" or cmd == "icondebug" then
         if ns.Feral and ns.Feral.Debug then ns.Report(cmd, function(out) ns.Feral.Debug(out) end, true) end
+    elseif cmd == "healtrace" then
+        if ns.Cooldowns and ns.Cooldowns.HealTrace then
+            local on = ns.Cooldowns.HealTrace()
+            ns.Print(on and "heal trace on: each heal you cast goes to the log (predicted, landed, missing health). /skt healtrace again to stop, /skt log to read."
+                or "heal trace off")
+        end
     elseif cmd == "cddebug login" then
         Log(); SKToolsLog.armLogin = true
         ns.Print("next login or /reload: a cddebug report 1 s and 6 s in, saved to the log. /rl now, then /skt log.")
@@ -537,6 +546,7 @@ SlashCmdList.SKTOOLS = function(msg)
         print("  /skt minimap  - open or close the minimap button box\n  /skt platesdebug | platelist | icondebug  - print what the game tells the plates / every plate it has / the ready icons\n  /skt buffdebug  - print what the buff widgets see\n  /skt totemdebug - print the totems and Lightning Shield charges seen\n  /skt cddebug    - print what the cooldown panes show")
         print("  /skt cpu [seconds]  - measure how much CPU each part takes (10 seconds unless you say)")
         print("  /skt log  - the report log: every /skt report, to read and copy (/skt log clear empties it)")
+        print("  /skt healtrace  - log each heal you cast: what the game predicted and what landed")
         print("  Short commands for their own parts: /sdb, /sm, /skr (/rb)")
     end
 end

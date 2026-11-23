@@ -1396,7 +1396,61 @@ end
 -- at your missing health. The raw incoming number only when it is missing: that one counts every
 -- heal in full, so it can show more than you will get.
 local healCalc, healHow = nil, "-"
+
+-- Your own heal, while you cast it on yourself: the middle of the spell's tooltip range ("Heals ...
+-- for 649 to 781"). The game's own prediction for some spells overshoots (Healing Touch rank 6
+-- predicted 826 for a 649-781 heal; rank 3 was about right), while the tooltip matches what lands.
+-- Cast on someone else, or a spell whose tooltip has no heal range: the game's number as before.
+local tipCache = {}           -- [spellID] = middle of the range, or false (no heal range)
+local function TooltipHeal(id)
+    if not id then return nil end
+    if tipCache[id] ~= nil then return tipCache[id] or nil end
+    local fn = (C_Spell and C_Spell.GetSpellDescription) or _G.GetSpellDescription
+    local desc = fn and Plain(Ask(fn, id))
+    if type(desc) ~= "string" or desc == "" then return nil end       -- not loaded yet: ask again later
+    local lo, hi = desc:lower():match("heal[^%d]-(%d[%d,]*) to (%d[%d,]*)")
+    lo = lo and tonumber((lo:gsub(",", ""))); hi = hi and tonumber((hi:gsub(",", "")))
+    tipCache[id] = (lo and hi and hi >= lo) and (lo + hi) / 2 or false
+    return tipCache[id] or nil
+end
+-- who your cast is on: told by the game as you send it (a name, or nothing for yourself)
+local sent = {}
+local sentFrame = CreateFrame("Frame")
+pcall(sentFrame.RegisterUnitEvent or sentFrame.RegisterEvent, sentFrame, "UNIT_SPELLCAST_SENT", "player")
+sentFrame:SetScript("OnEvent", function(_, _, unit, target, castGUID, spellID)
+    if unit ~= "player" then return end
+    sent.target, sent.spell = Plain(target), Plain(spellID)
+end)
+local function OnYourself()
+    local me = UnitName and Plain(Ask(UnitName, "player"))
+    local t = sent.target
+    if type(t) == "string" then
+        if t == "" then return true end
+        if me and (t == me or t:match("^" .. me .. "%-")) then return true end
+        return false
+    end
+    -- not told: you heal your target when it is friendly and not you; yourself otherwise
+    local okE, ex = pcall(UnitExists, "target")
+    if not (okE and Plain(ex)) then return true end
+    local okU, isMe = pcall(UnitIsUnit, "target", "player")
+    if okU and Plain(isMe) then return true end
+    local okF, friend = pcall(UnitIsFriend, "player", "target")
+    return not (okF and Plain(friend))
+end
+local function OwnCastHeal()
+    if not (cast.active and not cast.channel and cast.spellID) then return nil end
+    local id = Plain(cast.spellID)
+    local mid = TooltipHeal(id)
+    if not mid or not OnYourself() then return nil end
+    return mid, id
+end
+
 local function IncomingHeal()
+    local mid, id = OwnCastHeal()
+    if mid then
+        healHow = ("your cast, the middle of its tooltip range (spell %s)"):format(tostring(id))
+        return mid
+    end
     if _G.CreateUnitHealPredictionCalculator and _G.UnitGetDetailedHealPrediction then
         if healCalc == nil then
             local ok, c = pcall(CreateUnitHealPredictionCalculator)
@@ -1410,6 +1464,49 @@ local function IncomingHeal()
     healHow = "raw incoming heals"
     return _G.UnitGetIncomingHeals and Ask(UnitGetIncomingHeals, "player")
 end
+
+-- /skt healtrace: for each heal you cast (on yourself), what the game predicted while you cast it
+-- and what actually landed, into the log. Numbers the game hides in combat show as "hidden": trace
+-- out of combat for real figures.
+local trace = { on = false }
+local function PlainNum(v) local pv = Plain(v); if type(pv) == "number" then return pv end end
+local function TraceSample()
+    -- while casting: the most the game predicted for your own heal, and in all
+    if not (trace.on and trace.cast) then return end
+    local own = _G.UnitGetIncomingHeals and PlainNum(Ask(UnitGetIncomingHeals, "player", "player"))
+    local all = PlainNum(IncomingHeal())
+    if own then trace.cast.own = math.max(trace.cast.own or 0, own) end
+    if all then trace.cast.all = math.max(trace.cast.all or 0, all) end
+    trace.cast.hp = PlainNum(Ask(UnitHealth, "player"))
+end
+local traceFrame = CreateFrame("Frame")
+traceFrame:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
+    if unit ~= "player" then return end
+    if event == "UNIT_SPELLCAST_START" then
+        local id = PlainNum(spellID)
+        local nm = id and Plain(Ask((C_Spell and C_Spell.GetSpellName) or _G.GetSpellInfo, id))
+        trace.cast = { id = id, name = nm or "?", guid = castGUID, maxHP = PlainNum(Ask(UnitHealthMax, "player")) }
+        TraceSample()
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" and trace.cast and trace.cast.guid == castGUID then
+        TraceSample()
+        local c = trace.cast
+        trace.cast = nil
+        local before = PlainNum(Ask(UnitHealth, "player")) or c.hp
+        C_Timer.After(0.4, function()
+            local after = PlainNum(Ask(UnitHealth, "player"))
+            local function N(v) return v and tostring(math.floor(v + 0.5)) or "hidden" end
+            local gain = (after and before) and (after - before) or nil
+            local missing = (c.maxHP and before) and (c.maxHP - before) or nil
+            local note = ""
+            if gain and c.own and c.own > 0 then note = (" -> %d%% of the prediction"):format(math.floor(gain / c.own * 100 + 0.5)) end
+            if after and c.maxHP and after >= c.maxHP then note = note .. " (topped up to full: capped)" end
+            ns.LogAdd("healtrace", { ("%s (%s): predicted %s (all incoming %s), landed +%s, missing before %s%s"):format(
+                tostring(c.name), tostring(c.id), N(c.own), N(c.all), N(gain), N(missing), note) })
+        end)
+    elseif (event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED") and trace.cast and trace.cast.guid == castGUID then
+        trace.cast = nil                                  -- (STOP may come before SUCCEEDED: not counted)
+    end
+end)
 
 -- healing on its way (a heal being cast on you, yours or anyone's), as on Blizzard's bars: a lighter
 -- segment starting where the health fill ends, as long as the heal is, cut off at the bar's end. It
@@ -1445,6 +1542,7 @@ local function HealPrediction(p, maxHP)
     pcall(p.heal.SetMinMaxValues, p.heal, 0, maxHP)
     local incoming = IncomingHeal()
     if incoming == nil or not pcall(p.heal.SetValue, p.heal, incoming) then p.heal:SetValue(0) end
+    TraceSample()
 end
 
 -- what a cast will spend, as on Blizzard's bars: the end of the power fill picked out in a lighter
@@ -1763,6 +1861,16 @@ ns.Cooldowns = {
     end,
     Panes = function() return panes end,
     Layouts = function() return state.layouts or 0 end,
+    HealTrace = function()
+        trace.on = not trace.on
+        for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_SUCCEEDED",
+                             "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED" }) do
+            if trace.on then pcall(traceFrame.RegisterUnitEvent or traceFrame.RegisterEvent, traceFrame, e, "player")
+            else traceFrame:UnregisterEvent(e) end
+        end
+        trace.cast = nil
+        return trace.on
+    end,
     Rows = Rows,
     ResetPositions = function()
         if not db then return end
