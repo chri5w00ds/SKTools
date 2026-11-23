@@ -273,7 +273,7 @@ end)
 
 local TAB_ALIASES = {
     db = "db", database = "db", profession = "db", professions = "db", prof = "db",
-    action = "action", actionbar = "action", bar = "action", mouseover = "action", hover = "action", fade = "action",
+    action = "action", actionbar = "action", bar = "action", mouseover = "action", hover = "action", fade = "action", quests = "quests", quest = "quests", tracker = "quests",
     widgets = "widgets", widget = "widgets", buffs = "widgets",
     cursor = "cursor", mouse = "cursor", glow = "cursor",
     keybinds = "keybinds", keys = "keybinds", binds = "keybinds", bindings = "keybinds",
