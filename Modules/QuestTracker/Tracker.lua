@@ -42,6 +42,7 @@ ns.QUEST_DEFAULTS = {
     fontSize = 13,
     dungeonAll = true,                         -- in a dungeon: its quests even when not tracked
     spoken = true,                             -- Spoken's Play buttons, when Spoken is installed
+    items = true,                              -- a quest's usable item, as a button by the quest
     unlocked = false,
     pvp = false,                               -- showing the PvP list
     collapsed = {},                            -- [region name] = true: folded
@@ -117,6 +118,12 @@ local function ReadLog()
                     complete = IsComplete(id, info), watched = IsWatched(id, i),
                     group = (Plain(info.suggestedGroup) or 0) > 0,
                 }
+                -- its usable item, as the game's tracker shows it (and once done only if the game says so)
+                local link, icon, charges, whenDone = Ask(_G.GetQuestLogSpecialItemInfo, i)
+                local q = list[#list]
+                if link and icon and (not q.complete or whenDone) then
+                    q.item = { link = link, icon = icon, charges = charges, id = tonumber(tostring(link):match("item:(%d+)")) }
+                end
             end
         end
     end
@@ -173,9 +180,28 @@ end
 ----------------------------------------------------------------------
 
 local GOLD = { 1, 0.82, 0 }
+local CIRCLE = ns.MEDIA .. "Circle"
+local GLOW = ns.MEDIA .. "CircleGlow"
+-- the markers' colours, from the game's: fill top / bottom, rim, dots
+local LOOK = {
+    arrow    = { top = { 1, 0.94, 0.48 }, bottom = { 0.91, 0.64, 0.07 }, rim = { 0.54, 0.36, 0.07 }, dot = { 0.29, 0.15, 0.02 } },
+    progress = { top = { 0.48, 0.14, 0.14 }, bottom = { 0.24, 0.04, 0.04 }, rim = { 0.79, 0.65, 0.29 }, dot = { 1, 0.85, 0.54 } },
+    done     = { top = { 0.43, 0.33, 0.08 }, bottom = { 0.23, 0.16, 0.02 }, rim = { 0.79, 0.65, 0.29 }, dot = { 1, 0.83, 0.29 } },
+}
+-- a texture shaded from top to bottom (falls back to one colour on clients without gradients)
+local function Shade(tex, top, bottom)
+    tex:SetVertexColor(1, 1, 1, 1)
+    if tex.SetGradient and CreateColor then
+        local ok = pcall(tex.SetGradient, tex, "VERTICAL", CreateColor(bottom[1], bottom[2], bottom[3], 1), CreateColor(top[1], top[2], top[3], 1))
+        if ok then return end
+    end
+    tex:SetVertexColor((top[1] + bottom[1]) / 2, (top[2] + bottom[2]) / 2, (top[3] + bottom[3]) / 2, 1)
+end
+local ITEM = 24               -- the item button's size
+local itemsWork = true        -- false where the client has no secure button to use an item with
 local LINE = { 0.85, 0.85, 0.85 }
 local DONE = { 0.55, 0.55, 0.55 }
-local PAD, INDENT, POI = 4, 22, 16
+local PAD, INDENT, POI = 4, 24, 18
 
 local function Atlas(tex, name)
     if not (C_Texture and C_Texture.GetAtlasInfo and tex.SetAtlas) then return false end
@@ -187,6 +213,9 @@ local function Size(fs, size)
     local font, _, flags = fs:GetFont()
     if font then pcall(fs.SetFont, fs, font, size, flags) end
 end
+
+local PlaceItems               -- the quest item buttons (further down)
+local superTracked            -- the quest the map arrow points at
 
 local panel = CreateFrame("Frame", "SKToolsQuestTracker", UIParent)
 panel:SetFrameStrata("LOW")
@@ -210,6 +239,10 @@ bar.title = bar:CreateFontString(nil, "OVERLAY")
 bar.title:SetFontObject(FontObj("ObjectiveTrackerHeaderFont", "GameFontNormalMed2"))
 bar.title:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
 bar.title:SetPoint("LEFT", 28, 0)
+-- how many quests you have, of the most you can: "12/40" next to the title
+bar.count = bar:CreateFontString(nil, "OVERLAY")
+bar.count:SetFontObject(FontObj("ObjectiveTrackerLineFont", "GameFontHighlight"))
+bar.count:SetPoint("LEFT", bar.title, "RIGHT", 8, 0)
 
 -- the PvP switch: crossed swords, lit while the PvP list shows
 local pvp = CreateFrame("Button", nil, bar)
@@ -246,6 +279,7 @@ scroll:EnableMouseWheel(true)
 scroll:SetScript("OnMouseWheel", function(self, d)
     local range = self:GetVerticalScrollRange() or 0
     self:SetVerticalScroll(math.max(0, math.min(range, (self:GetVerticalScroll() or 0) - d * 40)))
+    if PlaceItems then PlaceItems() end
 end)
 local list = CreateFrame("Frame", nil, scroll)
 list:SetSize(1, 1)
@@ -280,23 +314,34 @@ local function Head(i)
 end
 
 local function Marker(b)
-    -- the game's round quest marker where the client has it; else a gold ring of our own
-    local ok, m = pcall(CreateFrame, "Button", nil, b, "POIButtonTemplate")
-    if ok and m and m.SetQuestID then
-        b.poiKind = "game"
-        return m
+    -- a round marker of our own, drawn like the game's. (The game's own marker button is not used:
+    -- made in a fight - a quest updating mid-fight adds one - its setup makes a call the game
+    -- blocks for addons in combat: "blocked call: Button:SetPassThroughButtons()".)
+    local m = CreateFrame("Button", nil, b)
+    -- from our own round pictures (Media\Circle, Media\CircleGlow): a soft glow (the quest the arrow
+    -- points at), the rim, the shaded fill on it, then three round dots or a question mark
+    m.glow = m:CreateTexture(nil, "BACKGROUND", nil, -1)
+    m.glow:SetTexture(GLOW)
+    m.glow:SetPoint("CENTER")
+    m.glow:SetBlendMode("ADD")
+    m.glow:Hide()
+    m.ring = m:CreateTexture(nil, "BACKGROUND", nil, 0)
+    m.ring:SetTexture(CIRCLE)
+    m.ring:SetAllPoints()
+    m.bg = m:CreateTexture(nil, "BACKGROUND", nil, 1)
+    m.bg:SetTexture(CIRCLE)
+    m.bg:SetPoint("TOPLEFT", 2, -2); m.bg:SetPoint("BOTTOMRIGHT", -2, 2)
+    m.dots = {}
+    for k = 1, 3 do
+        local d = m:CreateTexture(nil, "ARTWORK")
+        d:SetTexture(CIRCLE)
+        d:SetSize(3, 3)
+        d:SetPoint("CENTER", m, "CENTER", (k - 2) * 4, 0)
+        m.dots[k] = d
     end
-    m = CreateFrame("Button", nil, b)
-    m.bg = m:CreateTexture(nil, "BACKGROUND"); m.bg:SetAllPoints()
-    m.bg:SetColorTexture(0.35, 0.08, 0.08, 1)
-    m.ring = m:CreateTexture(nil, "BORDER"); m.ring:SetPoint("TOPLEFT", -1, 1); m.ring:SetPoint("BOTTOMRIGHT", 1, -1)
-    m.ring:SetColorTexture(0.79, 0.65, 0.29, 1)
-    if m.bg.SetMask then
-        pcall(m.bg.SetMask, m.bg, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
-        pcall(m.ring.SetMask, m.ring, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
-    end
-    m.glyph = m:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    m.glyph:SetPoint("CENTER", 0, 1)
+    m.glyph = m:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    m.glyph:SetPoint("CENTER", 0.5, 0)
+    m.glyph:SetText("?")
     b.poiKind = "own"
     return m
 end
@@ -381,16 +426,15 @@ local function Objectives(q)
             if t and t ~= "" then out[#out + 1] = { text = "- " .. t, done = Plain(o.finished) == true } end
         end
     end
-    if #out == 0 or q.complete then
+    if #out == 0 then
         local summary
         if q.complete and _G.GetQuestLogCompletionText and q.index then summary = Ask(GetQuestLogCompletionText, q.index) end
         if (not summary or summary == "") and #out == 0 and _G.GetQuestLogQuestText and q.index and q.complete then
             local _, objText = Ask(GetQuestLogQuestText, q.index); summary = objText
         end
         if summary and summary ~= "" then
-            if #out == 0 then out[1] = { text = summary, done = false, plain = true }
-            else out[#out + 1] = { text = summary, done = false, plain = true } end
-        elseif #out == 0 then
+            out[1] = { text = summary, done = false, plain = true }
+        else
             out[1] = { text = q.complete and "Ready to hand in" or "", done = false, plain = true }
         end
     end
@@ -398,7 +442,7 @@ local function Objectives(q)
 end
 
 -- Spoken's Play button, as Spoken puts it on the game's tracker (see the Spoken note in Redraw)
-local function SpokenButton(b, q)
+local function SpokenButton(b, q, underItem)
     local S, VO = _G.Spoken, _G.VoiceOver
     local QO = type(VO) == "table" and VO.QuestOverlayUI
     local want = db.spoken ~= false and type(S) == "table" and S.DressBoxButton and type(QO) == "table"
@@ -423,10 +467,12 @@ local function SpokenButton(b, q)
         back:SetPoint("TOPLEFT", 1, -1); back:SetPoint("BOTTOMRIGHT", -1, 1)
         back:SetColorTexture(0, 0, 0, 0.6)
         btn:SetFrameLevel(b:GetFrameLevel() + 3)
-        btn:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
         b.spoken = btn
     end
     local btn = b.spoken
+    -- at the quest's top right; under its item button when it has one (as Spoken does on the game's)
+    btn:ClearAllPoints()
+    btn:SetPoint("TOPRIGHT", b, "TOPRIGHT", underItem and -((ITEM - 14) / 2) or 0, underItem and -(ITEM + 2) or 0)
     if btn.questID ~= q.questID then btn.soundData = nil end
     btn.questID = q.questID
     pcall(QO.BindPlayButton, QO, btn, q.questID, q.title, "the SKTools tracker's Play button")
@@ -450,6 +496,17 @@ Redraw = function()
     Place()
     bar.title:SetText(db.pvp and "PvP Objectives" or "All Objectives")
     Size(bar.title, fs + 2)
+    -- the count: every quest in the log (tracked or not, PvP too), against the game's limit
+    do
+        local _, n = Ask(Q and Q.GetNumQuestLogEntries)
+        if type(n) ~= "number" then n = #ReadLog() end
+        local most = (Q and Q.GetMaxNumQuestsCanAccept and Ask(Q.GetMaxNumQuestsCanAccept)) or Plain(_G.MAX_QUESTS) or 40
+        bar.count:SetText(("%d/%d"):format(n, most))
+        Size(bar.count, fs)
+        local full = n >= most
+        bar.count:SetTextColor(full and 1 or 0.85, full and 0.3 or 0.85, full and 0.3 or 0.85)
+        state.count = ("%d/%d"):format(n, most)
+    end
     pvp.bg:SetColorTexture(db.pvp and 0.45 or 0.08, 0.08, 0.08, 0.9)
     pvp.icon:SetDesaturated(not db.pvp)
     if not fold.atlasDone then
@@ -464,6 +521,7 @@ Redraw = function()
     end
 
     local y, nh, nb, quests = 0, 0, 0, 0
+    superTracked = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Ask(C_SuperTrack.GetSuperTrackedQuestID) or nil
     local groups = db.minimized and {} or Groups()
     local inner = w - 2 * PAD
     for _, g in ipairs(groups) do
@@ -493,20 +551,32 @@ Redraw = function()
             local b = Block(nb)
             b.questID, b.index = q.questID, q.index
             b:ClearAllPoints(); b:SetPoint("TOPLEFT", list, "TOPLEFT", PAD, -y); b:SetWidth(inner)
-            local hasPlay = SpokenButton(b, q)
-            local textW = inner - INDENT - (hasPlay and 18 or 2)
-            -- marker: in progress, or done (a question mark, as the game's)
+            b.item = (db.items ~= false and itemsWork) and q.item or nil
+            local hasPlay = SpokenButton(b, q, b.item ~= nil)
+            local right = (b.item and (ITEM + 4)) or (hasPlay and 18) or 2
+            local textW = inner - INDENT - right
+            -- marker: three dots in progress, a question mark once done, as the game's; the quest the map
+            -- arrow points at is lit yellow, with a glow round it and a wider rim (told apart by shape too)
             b.poi:Show()
-            if b.poiKind == "game" then
-                pcall(b.poi.SetQuestID, b.poi, q.questID)
-                if POIButtonUtil and POIButtonUtil.Style and b.poi.SetStyle then
-                    pcall(b.poi.SetStyle, b.poi, q.complete and POIButtonUtil.Style.QuestComplete or POIButtonUtil.Style.QuestInProgress)
-                end
-                if b.poi.UpdateButtonStyle then pcall(b.poi.UpdateButtonStyle, b.poi) end
-            else
-                b.poi.glyph:SetText(q.complete and "?" or "...")
-                b.poi.bg:SetColorTexture(q.complete and 0.35 or 0.35, q.complete and 0.28 or 0.08, 0.08, 1)
+            local arrow = superTracked ~= nil and superTracked == q.questID
+            local look = arrow and LOOK.arrow or (q.complete and LOOK.done or LOOK.progress)
+            local m = b.poi
+            m.glow:SetShown(arrow)
+            m.glow:SetSize(POI * 2, POI * 2)
+            m.glow:SetVertexColor(1, 0.85, 0.3, 0.85)
+            m.ring:SetVertexColor(look.rim[1], look.rim[2], look.rim[3], 1)
+            m.bg:ClearAllPoints()
+            local rim = arrow and 2 or 1.5
+            m.bg:SetPoint("TOPLEFT", rim, -rim); m.bg:SetPoint("BOTTOMRIGHT", -rim, rim)
+            Shade(m.bg, look.top, look.bottom)
+            for _, d in ipairs(m.dots) do
+                d:SetShown(not q.complete)
+                d:SetVertexColor(look.dot[1], look.dot[2], look.dot[3], 1)
             end
+            m.glyph:SetShown(q.complete)
+            m.glyph:SetTextColor(look.dot[1], look.dot[2], look.dot[3])
+            Size(m.glyph, math.floor(POI * 0.75))
+            b.poi.arrow = arrow
             -- title
             b.title:SetText(TitleText(q))
             b.title:SetTextColor(TitleColor(q))
@@ -529,6 +599,7 @@ Redraw = function()
                 by = by + math.max(fs, l:GetStringHeight() or 0) + 1
             end
             for k = #objs + 1, #b.lines do b.lines[k]:Hide() end
+            if b.item then by = math.max(by, ITEM + (hasPlay and 18 or 0)) end
             b:SetHeight(by)
             b:Show()
             y = y + by + 6
@@ -544,6 +615,7 @@ Redraw = function()
     local range = math.max(0, y - shown)
     if (scroll:GetVerticalScroll() or 0) > range then scroll:SetVerticalScroll(range) end
     state.quests, state.regions = quests, nh
+    PlaceItems()                                      -- the item buttons follow (out of combat)
 end
 
 ----------------------------------------------------------------------
@@ -633,6 +705,100 @@ local function SetupMover()
 end
 
 ----------------------------------------------------------------------
+-- Quest item buttons. Using an item needs the game's secure button, and in a fight such a button
+-- cannot be made, moved, shown or hidden - nor can a frame it sits in, so it is NOT put inside the
+-- tracker (which would then be stuck in a fight too). Each is a button of its own on the screen,
+-- set over its quest's top right corner, out of combat only. In a fight they stay where they are
+-- and keep working (cooldowns run); they catch up when the fight is over.
+----------------------------------------------------------------------
+
+local itemButtons, itemByQuest = {}, {}
+local itemsPending = false
+
+local function ItemButton(k)
+    local btn = itemButtons[k]
+    if btn then return btn end
+    local ok, made = pcall(CreateFrame, "Button", "SKToolsQuestItem" .. k, UIParent, "SecureActionButtonTemplate")
+    if not ok or not made then itemsWork = false; return nil end
+    btn = made
+    btn:SetSize(ITEM, ITEM)
+    btn:SetFrameStrata("MEDIUM")
+    pcall(btn.RegisterForClicks, btn, "AnyUp", "AnyDown")
+    btn:SetAttribute("type", "item")
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetAllPoints()
+    btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.edge = CreateFrame("Frame", nil, btn); btn.edge:SetAllPoints()
+    ns.W.Border(btn.edge, 0, 0, 0, 1, 1)
+    local okC, cd = pcall(CreateFrame, "Cooldown", nil, btn, "CooldownFrameTemplate")
+    btn.cd = okC and cd or nil
+    btn.count = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    btn.count:SetPoint("BOTTOMRIGHT", -1, 1)
+    btn:SetScript("OnEnter", function(self)
+        if not (_G.GameTooltip and self.index) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        if GameTooltip.SetQuestLogSpecialItem then pcall(GameTooltip.SetQuestLogSpecialItem, GameTooltip, self.index)
+        elseif self.link then pcall(GameTooltip.SetHyperlink, GameTooltip, self.link) end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() if _G.GameTooltip then GameTooltip:Hide() end end)
+    btn:Hide()
+    itemButtons[k] = btn
+    return btn
+end
+
+-- cooldown, charges and range: allowed any time (none of it moves the button)
+local function ItemLook(btn)
+    if not btn.index then return end
+    local start, dur, enable = Ask(_G.GetQuestLogSpecialItemCooldown, btn.index)
+    if btn.cd then
+        if start and dur and dur > 0 and enable ~= 0 then pcall(btn.cd.SetCooldown, btn.cd, start, dur) else pcall(btn.cd.Clear, btn.cd) end
+    end
+    local inRange = Ask(_G.IsQuestLogSpecialItemInRange, btn.index)
+    if inRange == 0 or inRange == false then btn.icon:SetVertexColor(1, 0.3, 0.3) else btn.icon:SetVertexColor(1, 1, 1) end
+end
+
+-- put a button over each quest with an item (out of combat only)
+PlaceItems = function()
+    if InCombatLockdown and InCombatLockdown() then itemsPending = true; return end
+    itemsPending = false
+    wipe(itemByQuest)
+    local used = 0
+    local showing = panel:IsShown() and db and db.items ~= false and not db.minimized
+    local top, bottom = scroll:GetTop(), scroll:GetBottom()
+    if showing then
+        for _, b in ipairs(blocks) do
+            if b:IsShown() and b.item and b.questID then
+                -- only while its quest is in the visible part of the list
+                local bt = b:GetTop()
+                local visible = true
+                if bt and top and bottom and top > bottom then visible = bt <= top + 1 and (bt - ITEM) >= bottom - 1 end
+                if visible then
+                    local btn = ItemButton(used + 1)
+                    if not btn then break end
+                    used = used + 1
+                    btn.index, btn.link, btn.questID = b.index, b.item.link, b.questID
+                    btn:SetAttribute("item", b.item.id and ("item:" .. b.item.id) or b.item.link)
+                    btn.icon:SetTexture(b.item.icon)
+                    btn.count:SetText((b.item.charges and b.item.charges > 1) and tostring(b.item.charges) or "")
+                    btn:ClearAllPoints()
+                    btn:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", b:GetRight() or 0, bt or 0)
+                    btn:SetFrameLevel(panel:GetFrameLevel() + 10)
+                    btn:Show()
+                    ItemLook(btn)
+                    itemByQuest[b.questID] = btn
+                end
+            end
+        end
+    end
+    for k = used + 1, #itemButtons do
+        local btn = itemButtons[k]
+        btn:Hide(); btn.index, btn.link, btn.questID = nil, nil, nil
+        btn:SetAttribute("item", nil)
+    end
+end
+
+----------------------------------------------------------------------
 -- On / off, and redrawing when the log changes
 ----------------------------------------------------------------------
 
@@ -642,6 +808,7 @@ local function Refresh()
     if not db then return end
     if not On() then
         panel:Hide(); mover:Hide()
+        PlaceItems()
         SetGameTracker(false)
         state.why = ns.BerryMode() and "off (Berry Mode)" or "off"
         return
@@ -649,16 +816,25 @@ local function Refresh()
     SetGameTracker(true)
     Redraw()
     panel:Show()
+    PlaceItems()
     if db.unlocked then SetupMover() end
     mover:SetShown(db.unlocked == true)
     state.why = "on"
 end
 
-pvp:SetScript("OnClick", function() if db then db.pvp = not db.pvp; Redraw() end end)
-fold:SetScript("OnClick", function() if db then db.minimized = not db.minimized; Redraw() end end)
+pvp:SetScript("OnClick", function() if db then db.pvp = not db.pvp; Redraw(); PlaceItems() end end)
+fold:SetScript("OnClick", function() if db then db.minimized = not db.minimized; Redraw(); PlaceItems() end end)
 
 local driver = CreateFrame("Frame")
 local pending = false
+-- the items' range colour, a few times a second while any item button shows
+local rangeAcc = 0
+driver:SetScript("OnUpdate", function(_, elapsed)
+    rangeAcc = rangeAcc + elapsed
+    if rangeAcc < 0.3 then return end
+    rangeAcc = 0
+    for _, btn in ipairs(itemButtons) do if btn:IsShown() then ItemLook(btn) end end
+end)
 local function Soon()
     if pending then return end
     pending = true
@@ -667,7 +843,7 @@ end
 driver:RegisterEvent("PLAYER_LOGIN")
 for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "QUEST_LOG_UPDATE", "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED",
                      "QUEST_REMOVED", "QUEST_TURNED_IN", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_ENABLED",
-                     "SUPER_TRACKING_CHANGED" }) do
+                     "SUPER_TRACKING_CHANGED", "BAG_UPDATE_COOLDOWN", "BAG_UPDATE_DELAYED" }) do
     pcall(driver.RegisterEvent, driver, e)
 end
 pcall(driver.RegisterUnitEvent or driver.RegisterEvent, driver, "UNIT_QUEST_LOG_CHANGED", "player")
@@ -683,6 +859,11 @@ driver:SetScript("OnEvent", function(_, event)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" and pendingBlizzard then SetGameTracker(wantHidden) end
+    if event == "PLAYER_REGEN_ENABLED" and itemsPending then PlaceItems() end
+    if event == "BAG_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_COOLDOWN" then
+        for _, btn in ipairs(itemButtons) do if btn:IsShown() then ItemLook(btn) end end
+        return
+    end
     Soon()
 end)
 
@@ -694,6 +875,8 @@ ns.QuestTracker = {
     Blocks = function() return blocks end,
     Heads = function() return heads end,
     PvPButton = function() return pvp end,
+    CountText = function() return bar.count:GetText() end,
+    ItemButtons = function() return itemButtons end,
     FoldButton = function() return fold end,
     ResetPosition = function()
         if not db then return end
@@ -703,7 +886,9 @@ ns.QuestTracker = {
     Debug = function(print)
         print(("quest tracker: %s; view %s; %d quests in %d groups; %s"):format(state.why, state.view, state.quests, state.regions, state.blizzard))
         local spokenThere = type(_G.Spoken) == "table" and type(_G.VoiceOver) == "table" and _G.VoiceOver.QuestOverlayUI ~= nil
-        print(("  Spoken: %s; markers: %s"):format(spokenThere and "found" or "not found", tostring(blocks[1] and blocks[1].poiKind or "-")))
+        print(("  Spoken: %s; markers: %s; item buttons: %s%s"):format(spokenThere and "found" or "not found",
+            "own", itemsWork and "ok" or "this client has no secure button",
+            itemsPending and " (waiting for the fight to end)" or ""))
         for _, q in ipairs(ReadLog()) do
             print(("  %s [%s] %s - region %s, tag %s/%s, %s%s"):format(tostring(q.questID), tostring(q.level), q.title, q.header,
                 tostring(q.tagID), tostring(q.tagName), q.watched and "tracked" or "not tracked", q.complete and ", complete" or ""))

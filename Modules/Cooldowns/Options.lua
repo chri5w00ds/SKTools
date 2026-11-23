@@ -102,8 +102,9 @@ local function BuildPanes(panel)
     end
     Pair("buffs", "Tracked buffs", -8, "size", "Icon size", 2, 10, "cap", "Per row (at most)", 1, 12)
     Pair("utility", "Utility", -80, "size", "Icon size", 2, 10, "cap", "Per row (at most)", 1, 12)
-    Pair("items", "Items (on-use trinkets)", -152, "size", "Icon size", 2, 10, "cap", "Per row (at most)", 1, 6)
-    Pair("bars", "Tracked bars", -224, "width", "Width", 4, 60, "height", "Bar height", 1, 6)
+    Pair("gear", "Gear (on-use weapons, armour)", -152, "size", "Icon size", 2, 10, "cap", "Per row (at most)", 1, 8)
+    Pair("items", "Items (on-use trinkets)", -224, "size", "Icon size", 2, 10, "cap", "Per row (at most)", 1, 6)
+    Pair("bars", "Tracked bars", -296, "width", "Width", 4, 60, "height", "Bar height", 1, 6)
 end
 
 -- the resource display page: the block's bars (the settings the Blizzard display had)

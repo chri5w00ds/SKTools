@@ -81,6 +81,8 @@ ns.CDM_DEFAULTS = {
     buffs   = { x = 0,    y = -87,  size = 32, cap = 6 },
     utility = { x = 0,    y = -200, size = 32, cap = 7 },
     items   = { x = 152,  y = -96,  size = 32, cap = 2 },
+    -- on-use weapons and armour: a row of its own fixed on top of the items row (no place of its own)
+    gear    = { size = 32, cap = 6 },
     bars    = { x = -240, y = -96,  width = 168, height = 16 },
     -- our resource display (the block's bars): the settings the Blizzard one had
     res     = { alpha = 1, gradient = 0, cylinder = 0, druidEnergy = false, colors = {} },
@@ -95,7 +97,10 @@ local VIEWERS = {
     buffs   = "BuffIconCooldownViewer",
     bars    = "BuffBarCooldownViewer",
 }
-local GROW = { essential = "up", buffs = "up", utility = "down", items = "down" }
+-- the slots of the gear row, in paper-doll order: head, neck, shoulder, chest, waist, legs, feet,
+-- wrist, hands, rings, back, main hand, off hand, ranged (not the trinkets: those are the items row)
+local GEAR_SLOTS = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17, 18 }
+local GROW = { essential = "up", buffs = "up", utility = "down", items = "down", gear = "up" }
 
 local db
 local panes = {}
@@ -1127,8 +1132,11 @@ end
 -- entries of an icon pane: from Blizzard's pane, or examples while unlocked
 local function Entries(key)
     local list = {}
-    if key == "items" then
-        for _, slot in ipairs({ 13, 14 }) do
+    if key == "items" or key == "gear" then
+        -- items: the trinkets; gear: everything else you wear with a Use: (a weapon such as the Manual
+        -- Crown Pummeler, a helm, gloves...). Blizzard's Cooldown Manager tracks none of these.
+        local slots = (key == "items") and { 13, 14 } or GEAR_SLOTS
+        for _, slot in ipairs(slots) do
             local id = Plain(Ask(GetInventoryItemID, "player", slot))
             if id then
                 local spell = C_Item and C_Item.GetItemSpell and Plain(Ask(C_Item.GetItemSpell, id)) or (_G.GetItemSpell and Plain(Ask(GetItemSpell, id)))
@@ -1151,7 +1159,7 @@ local function Entries(key)
         end
     end
     if #list == 0 and db.unlocked then
-        local n = ({ essential = 6, buffs = 5, utility = 7, items = 2 })[key] or 4
+        local n = ({ essential = 6, buffs = 5, utility = 7, items = 2, gear = 1 })[key] or 4
         for i = 1, n do
             list[i] = { sample = true, texture = "Interface\\Icons\\INV_Misc_QuestionMark",
                 sampleCd = (i == 2) and 0.6 or nil, sampleStack = (i == 4) and "2" or nil,
@@ -1373,10 +1381,28 @@ local function DrawIconPane(key, label)
     for i, e in ipairs(entries) do
         ids[i] = tostring(e.spellID or e.slot or "-") .. ":" .. tostring(e.item or "") .. (e.sample and "s" or "")
     end
-    if NeedsLayout(p, s, s.size, s.cap, table.concat(ids, ",")) then
+    -- (the gear row sits on the items row: built again when that one moves, shows or hides)
+    local under = ""
+    if key == "gear" then
+        local ip, is = panes.items, Settings("items") or {}
+        under = table.concat({ tostring(is.x), tostring(is.y), tostring(ip and ip:IsShown()), tostring(ip and ip:GetHeight()) }, "/")
+    end
+    if NeedsLayout(p, s, s.size, s.cap, table.concat(ids, ","), under) then
         p.lines:Done(); p.rings:Done()
         local rows, h, w = LayIcons(p, entries, Boxes(s.size or 32), s.cap, GROW[key], 0)
-        Place(p, s, w, h, GROW[key] == "up" and "bottom" or "top")
+        if key == "gear" then
+            -- fixed on top of the items row, moving with it: by the row itself when it is up, else
+            -- where its top line would be
+            local ip, is = panes.items, Settings("items") or {}
+            Place(p, { x = is.x, y = is.y }, w, h, "bottom")
+            if ip and ip:IsShown() and ip:GetNumPoints() > 0 then
+                p:ClearAllPoints()
+                p:SetPoint("BOTTOM", ip, "TOP", 0, 2)
+            end
+            p.mover:Hide()                                  -- moved with the items row
+        else
+            Place(p, s, w, h, GROW[key] == "up" and "bottom" or "top")
+        end
         -- after placing (the lines are put on whole pixels): a white frame round each icon, rounded at
         -- all four corners, neighbours sharing a line
         for _, c in ipairs(p.cells or {}) do Ring(p, c[1], c[2], c[3], c[4], h, true) end
@@ -1794,6 +1820,7 @@ local function Update()
     DrawIconPane("buffs", "Cooldowns: tracked buffs")
     DrawIconPane("utility", "Cooldowns: utility")
     DrawIconPane("items", "Cooldowns: items")
+    DrawIconPane("gear", "Cooldowns: gear")              -- after the items row: it sits on top of it
     DrawBars()
     PRD()
     CastBar()
@@ -1837,6 +1864,10 @@ driver:SetScript("OnEvent", function(_, event)
             -- 2.24: the Essential icons were part of the block; they are a pane of their own now
             root.cooldowns.essential = { size = old.size, cap = old.cap }
             old.size, old.cap = nil, nil
+        end
+        -- the gear row (3.11) starts at the items row's icon size
+        if type(root.cooldowns.gear) ~= "table" and type(root.cooldowns.items) == "table" then
+            root.cooldowns.gear = { size = root.cooldowns.items.size, cap = 6 }
         end
         DeepFill(root.cooldowns, ns.CDM_DEFAULTS)
         db = root.cooldowns
@@ -1882,7 +1913,7 @@ ns.Cooldowns = {
     Debug = function(print)
         print(("cooldown panes: %s; Blizzard's Cooldown Manager %s"):format((On() and "on" or "off") .. (ns.BerryMode() and " (Berry Mode)" or ""), state.blizzard))
         print(("  layouts built so far: %d (only when something changes)"):format(state.layouts or 0))
-        for _, k in ipairs({ "block", "essential", "buffs", "utility", "items", "bars" }) do
+        for _, k in ipairs({ "block", "essential", "buffs", "utility", "items", "gear", "bars" }) do
             print(("  %s: %s"):format(k, state.panes[k] or "-"))
         end
         do
@@ -1928,7 +1959,7 @@ ns.Cooldowns = {
             end
         end
         -- what each of our icon panes shows, icon by icon
-        for _, key in ipairs({ "essential", "utility", "buffs", "items" }) do
+        for _, key in ipairs({ "essential", "utility", "buffs", "items", "gear" }) do
             local p = panes[key]
             if p and p.icons then
                 for i, f in ipairs(p.icons) do

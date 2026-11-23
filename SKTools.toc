@@ -2,7 +2,7 @@
 ## Title: SKTools
 ## Notes: Profession database with map pins, action bars that show on mouseover, nameplate quest marks, combo points and a Hunter range crescent, a minimap button box, and cooldown panes with health, power and cast bars. /skt for settings.
 ## Author: Scotskoogen-Chris
-## Version: 3.9.1
+## Version: 3.11.1
 ## IconTexture: Interface\AddOns\SKTools\Media\Logo
 ## SavedVariables: SKToolsDB, SKToolsLog
 ## SavedVariablesPerCharacter: SKToolsCharDB
