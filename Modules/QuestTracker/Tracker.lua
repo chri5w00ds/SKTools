@@ -242,7 +242,6 @@ bar.title:SetPoint("LEFT", 28, 0)
 -- how many quests you have, of the most you can: "12/40" next to the title
 bar.count = bar:CreateFontString(nil, "OVERLAY")
 bar.count:SetFontObject(FontObj("ObjectiveTrackerLineFont", "GameFontHighlight"))
-bar.count:SetPoint("LEFT", bar.title, "RIGHT", 8, 0)
 
 -- the PvP switch: crossed swords, lit while the PvP list shows
 local pvp = CreateFrame("Button", nil, bar)
@@ -268,6 +267,9 @@ pvp:SetScript("OnLeave", function() if _G.GameTooltip then GameTooltip:Hide() en
 local fold = CreateFrame("Button", nil, bar)
 fold:SetSize(16, 16)
 fold:SetPoint("RIGHT", -4, 0)
+-- the count sits at the right, just before the fold button
+bar.count:SetPoint("RIGHT", fold, "LEFT", -6, 0)
+bar.count:SetJustifyH("RIGHT")
 fold.tex = fold:CreateTexture(nil, "ARTWORK"); fold.tex:SetAllPoints()
 fold.text = fold:CreateFontString(nil, "OVERLAY", "GameFontNormal"); fold.text:SetPoint("CENTER")
 
@@ -876,6 +878,7 @@ ns.QuestTracker = {
     Heads = function() return heads end,
     PvPButton = function() return pvp end,
     CountText = function() return bar.count:GetText() end,
+    CountFont = function() return bar.count end,
     ItemButtons = function() return itemButtons end,
     FoldButton = function() return fold end,
     ResetPosition = function()
