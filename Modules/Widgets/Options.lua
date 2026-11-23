@@ -1,8 +1,12 @@
--- SKTools settings tab: Widgets (the buff panes).
+-- SKTools settings tab: Widgets.
 --
--- A designer row of five slots: your class buff locked in the middle, two slots either side.
--- Click a side slot to pick what goes there (a helpful spell from your spell book, Rebirth,
--- or empty). Below it: unlock the panes to move and resize them, and their sizes.
+-- Three sections of the same shape - a tick box before the title turns the widget on or off, a line
+-- about it, its options with its icon size on the right:
+--   Personal buffs       a designer row of five slots: your class buff locked in the middle, two
+--                        either side (click one to pick a helpful spell, Rebirth, or empty)
+--   Missing class buffs
+--   PvP flag
+-- and one row along the bottom for all of them: unlock (move and resize), reset positions, debug.
 
 local ADDON, ns = ...
 
@@ -25,25 +29,31 @@ local ORDER = { "s1", "s2", "centre", "s3", "s4" }
 local SLOT, GAP = 44, 14
 
 local function Build(panel)
-    local L, R = 24, 400
+    local L, R, CW = 24, 400, 330
     local BF = ns.Buffs
     ns.WidgetsPanel = panel
 
     ------------------------------------------------------------------
-    W.Header(panel, "Personal buffs", L, -8, 480)
-    local on = panel:Add(W.Check(panel, "Show the buff widgets",
+    -- a section's title with its on / off tick box before it (as the cooldown panes' titles)
+    local function Section(title, y, get, set, tip)
+        local c = panel:Add(W.Check(panel, "", get, set, 22), L, y + 3)
+        c.tooltip = tip
+        W.Header(panel, title, L + 24, y, 680 - 24)
+        return c
+    end
+
+    Section("Personal buffs", -8,
         function() return ns.FeatureOn(BF.Settings()) end,
-        function(v) ns.SetFeatureOn(BF.Settings(), v); BF.Refresh() end, 190), L + 510, -10)
-    on.tooltip = "Berry Mode keeps its own on / off for this (off until you turn it on)."
-    W.Note(panel, "Your class buff sits in the middle. Click a slot either side to choose a buff for it: it lights up "
-        .. "when you are missing it, or (for a buff you can put on others, like Thorns) when your tank is, with a "
-        .. "small shield on the icon. Rebirth lights up when someone in your group is dead and you have its seed.",
-        L, -32, 700)
+        function(v) ns.SetFeatureOn(BF.Settings(), v); BF.Refresh() end,
+        "Show the personal buffs pane: your class buff in the middle, your chosen buffs either side. Each lights "
+        .. "up when you are missing it, or (for a buff you can put on others, like Thorns) when your tank is, with a "
+        .. "small shield on the icon. Rebirth lights up when someone in your group is dead and you have its seed. "
+        .. "Berry Mode keeps its own on / off for this (off until you turn it on).")
 
     -- the designer row
     local box = CreateFrame("Frame", nil, panel)
     box:SetSize(5 * SLOT + 4 * GAP + 40, SLOT + 46)
-    box:SetPoint("TOPLEFT", panel, "TOPLEFT", L + (700 - (5 * SLOT + 4 * GAP + 40)) / 2, -84)
+    box:SetPoint("TOPLEFT", panel, "TOPLEFT", L + (700 - (5 * SLOT + 4 * GAP + 40)) / 2, -34)
     W.Fill(box, 0.06, 0.06, 0.07, 0.9)
     W.Border(box, 0.35, 0.35, 0.38, 1, 1)
     -- the centre line the panes grow out from
@@ -184,15 +194,15 @@ local function Build(panel)
     end
     panel.picker = picker
 
-    W.Note(panel, "On screen only the missing ones show, grown out from the centre line: one sits on it, two sit "
-        .. "either side of it. Your class buff stays in the middle (just left of it when the count is even).",
-        L, -186, 700)
+    local how = W.Note(panel, "Click a side slot to choose a buff. On screen only the missing ones show, from the centre line out.",
+        L, -130, 700)
+    if how and how.SetJustifyH then how:SetJustifyH("CENTER") end
 
     -- the class buff in the middle can be left out (Lightning Shield, say, which runs out by its
     -- charges rather than by time)
     local classCheck = panel:Add(W.Check(panel, "Show your class buff in the middle",
         function() return BF.ClassShown() end,
-        function(v) BF.SetClassShown(v); Redraw() end, 400), L, -222)
+        function(v) BF.SetClassShown(v); Redraw() end, CW), L, -160)
     local oldRedraw = Redraw
     Redraw = function()
         oldRedraw()
@@ -205,30 +215,58 @@ local function Build(panel)
     end
     panel.RedrawSlots = Redraw
 
-    ------------------------------------------------------------------
-    W.Header(panel, "Size", L, -262, 330)
-    panel:Add(W.Slider(panel, "Personal buffs icon size", 16, 64, 1,
+    panel:Add(W.Slider(panel, "Icon size", 16, 64, 1,
         function() return B().personal.size or 36 end,
-        function(v) B().personal.size = v; BF.Refresh() end, W.px, 300), L, -288)
-    panel:Add(W.Slider(panel, "Missing class buffs icon size", 16, 64, 1,
-        function() return B().missing.size or 30 end,
-        function(v) B().missing.size = v; BF.Refresh() end, W.px, 300), L, -342)
+        function(v) B().personal.size = v; BF.Refresh() end, W.px, CW), R, -152)
 
-    W.Header(panel, "Position", R, -262, 330)
-    local unlock = panel:Add(W.Check(panel, "Unlock the panes (move and resize)",
+    ------------------------------------------------------------------
+    Section("Missing class buffs", -200,
+        function() return ns.FeatureOn(B().missing) end,
+        function(v) ns.SetFeatureOn(B().missing, v); BF.Refresh() end,
+        "Show the missing class buffs pane. Hover one in the game to see who can cast it. "
+        .. "Berry Mode keeps its own on / off for this (off until you turn it on).")
+    W.Note(panel, "The class buffs your group could give you that you do not have - only from players who can "
+        .. "cast them (old enough, and for a talent buff, seen giving it).", L, -232, CW)
+    panel:Add(W.Slider(panel, "Icon size", 16, 64, 1,
+        function() return B().missing.size or 30 end,
+        function(v) B().missing.size = v; BF.Refresh() end, W.px, CW), R, -224)
+
+    ------------------------------------------------------------------
+    local P = function() return ns.PvPIcon.Settings() or {} end
+    Section("PvP flag", -272,
+        function() return ns.FeatureOn(P()) end,
+        function(v) ns.SetFeatureOn(P(), v); ns.PvPIcon.Refresh() end,
+        "The game's own PvP icon - your faction's, or the free-for-all one - while you are flagged, hidden otherwise. "
+        .. "Berry Mode keeps its own on / off for this (off until you turn it on).")
+    local pvpTimer = panel:Add(W.Check(panel, "Countdown while the flag wears off",
+        function() return P().timer ~= false end,
+        function(v) P().timer = v and true or false; ns.PvPIcon.Refresh() end, CW), L, -304)
+    pvpTimer.tooltip = "Minutes and seconds under the icon until your PvP flag drops (when the game is counting down)."
+    panel:Add(W.Slider(panel, "Icon size", 16, 96, 1,
+        function() return P().size or 36 end,
+        function(v) P().size = v; ns.PvPIcon.Refresh() end, W.px, CW), R, -296)
+
+    ------------------------------------------------------------------ all of them
+    local rule = panel:CreateTexture(nil, "ARTWORK")
+    rule:SetColorTexture(0.82, 0.68, 0.30, 0.35)
+    rule:SetSize(700, 1)
+    rule:SetPoint("TOPLEFT", panel, "TOPLEFT", L, -346)
+    local unlock = panel:Add(W.Check(panel, "Unlock widgets (drag to move, corner to resize)",
         function() return B().unlocked == true end,
-        function(v) B().unlocked = v and true or false; BF.Refresh() end, 300), R, -288)
-    unlock.tooltip = "Shows both panes with example icons. Drag a pane to move it; drag its white corner to resize it. "
+        function(v) B().unlocked = v and true or false; BF.Refresh(); if ns.PvPIcon then ns.PvPIcon.Refresh() end end, 360), L, -360)
+    unlock.tooltip = "Shows the widgets with examples. Drag one to move it; drag its white corner to resize it. "
         .. "Untick when you are done."
-    W.Note(panel, "Missing class buffs: the class buffs your group members could give you that you do not have. "
-        .. "Hover one in the game to see who can cast it.", R, -316, 330)
     panel:Add(W.Button(panel, "Reset positions", 130, function()
         BF.ResetPositions()
-        ns.Print("buff widget positions reset.")
-    end), R, -370)
-    panel:Add(W.Button(panel, "Debug to chat", 120, function()
-        BF.Debug(ns.Printer and ns.Printer("Buffs") or print)
-    end), R + 140, -370)
+        if ns.PvPIcon then ns.PvPIcon.ResetPosition() end
+        ns.Print("widget positions reset.")
+    end), L + 440, -356)
+    panel:Add(W.Button(panel, "Debug to log", 120, function()
+        ns.Report("widgets", function(out)
+            BF.Debug(out)
+            if ns.PvPIcon then ns.PvPIcon.Debug(out) end
+        end, true)
+    end), L + 580, -356)
 
     local oldSync = panel.OnSync
     function panel:OnSync()

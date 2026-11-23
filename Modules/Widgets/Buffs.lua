@@ -41,17 +41,18 @@ end
 ----------------------------------------------------------------------
 
 local CLASS_BUFFS = {
-    DRUID   = { id = 1126,  name = "Mark of the Wild",       also = { { 21849, "Gift of the Wild" } } },
-    PRIEST  = { id = 1243,  name = "Power Word: Fortitude",  also = { { 21562, "Prayer of Fortitude" } } },
-    MAGE    = { id = 1459,  name = "Arcane Intellect",       also = { { 23028, "Arcane Brilliance" } } },
-    PALADIN = { id = 19740, name = "Blessing of Might",      also = {
+    -- level: the lowest level it is learned at; talent: a talent, so only someone seen giving it counts
+    DRUID   = { id = 1126,  name = "Mark of the Wild",       level = 1, also = { { 21849, "Gift of the Wild" } } },
+    PRIEST  = { id = 1243,  name = "Power Word: Fortitude",  level = 1, also = { { 21562, "Prayer of Fortitude" } } },
+    MAGE    = { id = 1459,  name = "Arcane Intellect",       level = 1, also = { { 23028, "Arcane Brilliance" } } },
+    PALADIN = { id = 19740, name = "Blessing of Might",      level = 4, also = {
                     { 20217, "Blessing of Kings" }, { 19742, "Blessing of Wisdom" }, { 1038, "Blessing of Salvation" },
                     { 19977, "Blessing of Light" }, { 20911, "Blessing of Sanctuary" },
                     { 25782, "Greater Blessing of Might" }, { 25898, "Greater Blessing of Kings" },
                     { 25894, "Greater Blessing of Wisdom" }, { 25895, "Greater Blessing of Salvation" },
                     { 25890, "Greater Blessing of Light" }, { 25899, "Greater Blessing of Sanctuary" } } },
-    WARRIOR = { id = 6673,  name = "Battle Shout" },
-    HUNTER  = { id = 19506, name = "Trueshot Aura" },
+    WARRIOR = { id = 6673,  name = "Battle Shout",           level = 1 },
+    HUNTER  = { id = 19506, name = "Trueshot Aura",          level = 40, talent = true },
     WARLOCK = { id = 706,   name = "Demon Armor", group = false, also = { { 687, "Demon Skin" } } },
     SHAMAN  = { id = 324,   name = "Lightning Shield", group = false },
 }
@@ -63,7 +64,8 @@ local SIDE = { "s1", "s2", "s3", "s4" }       -- s1, s2 left of the class buff; 
 
 ns.BUFF_DEFAULTS = {
     personal = { size = 36, point = "CENTER", x = 0, y = -180 },
-    missing  = { size = 30, point = "CENTER", x = 0, y = -230 },
+    -- the missing class buffs pane has its own on / off (the one below is the personal pane's)
+    missing  = { size = 30, point = "CENTER", x = 0, y = -230, enabled = true, berryEnabled = false },
     slots    = {},                             -- [class] = { s1 = "Thorns", ... }
     unlocked = false,                          -- the panes show their frames and can be moved / resized
     enabled  = true,
@@ -355,6 +357,59 @@ local function SideNeeded(value)
     return false
 end
 
+-- Can this group member give their class buff? The game does not say what spells someone else knows,
+-- so: old enough to have learned it, and, for a buff that comes from a talent, seen giving it - their
+-- buff on anyone in the group, or a cast of it (remembered by name from then on).
+local function Seen() db.seen = db.seen or {}; return db.seen end
+local function NameOf(u) local ok, n = pcall(UnitName, u); return ok and Plain(n) or nil end
+local function CanGive(u, c)
+    local cb = CLASS_BUFFS[c]
+    local okL, lv = pcall(UnitLevel, u)
+    lv = okL and Plain(lv)
+    if type(lv) == "number" and lv > 0 and cb.level and lv < cb.level then return false end
+    if cb.talent then
+        local n = NameOf(u)
+        return n ~= nil and Seen()[n] ~= nil and Seen()[n][c] == true
+    end
+    return true
+end
+local function MarkSeen(giverName, c)
+    if not (db and giverName and c) then return end
+    local s2 = Seen()
+    s2[giverName] = s2[giverName] or {}
+    if not s2[giverName][c] then s2[giverName][c] = true; return true end
+end
+-- which class buff a spell or aura name is (any of its versions)
+local function ClassOfBuff(name)
+    if not name then return nil end
+    for c, cb in pairs(CLASS_BUFFS) do
+        if cb.talent and BuffNames(cb)[name] then return c end
+    end
+end
+-- look for talent buffs on the group (who put them there), while someone's is still unknown
+local function LookForGivers()
+    if not db then return end
+    local wanted = false
+    for _, u in ipairs(Units()) do
+        if not IsMe(u) then
+            local okC, _, c = pcall(UnitClass, u)
+            c = okC and Plain(c)
+            local cb = c and CLASS_BUFFS[c]
+            if cb and cb.talent and not CanGive(u, c) then wanted = true end
+        end
+    end
+    if not (wanted and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+    for _, u in ipairs(Units()) do
+        for i = 1, 40 do
+            local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, u, i, "HELPFUL")
+            if not ok or type(a) ~= "table" then break end
+            local c = ClassOfBuff(Plain(a.name))
+            local src = c and Plain(a.sourceUnit)
+            if src then MarkSeen(NameOf(src), c) end
+        end
+    end
+end
+
 -- the class buffs your group members could give you that you are missing
 local function MissingFromGroup()
     local mine = MyClass()
@@ -364,7 +419,7 @@ local function MissingFromGroup()
             local ok, _, c = pcall(UnitClass, u)
             c = ok and Plain(c)
             local cb = c and CLASS_BUFFS[c]
-            if cb and c ~= mine and cb.group ~= false then
+            if cb and c ~= mine and cb.group ~= false and CanGive(u, c) then
                 byClass[c] = byClass[c] or {}
                 local okN, n = pcall(UnitName, u)
                 byClass[c][#byClass[c] + 1] = okN and Plain(n) or u
@@ -590,20 +645,24 @@ function Update()
         MakePane("personal", "Personal buffs")
         MakePane("missing", "Missing class buffs")
     end
-    -- switched off (in Berry Mode they start off, until turned on there)
-    if not ns.FeatureOn(db) then
-        for _, p in pairs(panes) do Draw(p, {}); p:Hide(); p.frame:Hide() end
-        local why = ns.BerryMode() and "off (Berry Mode)" or "off"
-        state.personal, state.missing = why, why
-        return
+    -- each pane switched on or off on its own (in Berry Mode they start off, until turned on there)
+    local on = { personal = ns.FeatureOn(db), missing = ns.FeatureOn(db.missing) }
+    local why = ns.BerryMode() and "off (Berry Mode)" or "off"
+    local function Off(kind)
+        local p = panes[kind]
+        Draw(p, {}); p:Hide(); p.frame:Hide()
+        state[kind] = why
     end
-    for kind, p in pairs(panes) do p.frame:SetShown(db.unlocked == true) end
+    for kind, p in pairs(panes) do p.frame:SetShown(on[kind] and db.unlocked == true) end
     if db.unlocked then
-        Draw(panes.personal, Sample("personal"))
-        Draw(panes.missing, Sample("missing"))
-        state.personal, state.missing = "unlocked", "unlocked"
+        for _, kind in ipairs({ "personal", "missing" }) do
+            if on[kind] then Draw(panes[kind], Sample(kind)); state[kind] = "unlocked" else Off(kind) end
+        end
         return
     end
+    if not on.personal then Off("personal") end
+    if not on.missing then Off("missing") end
+    if not (on.personal or on.missing) then return end
 
     -- personal: the class buff and the side slots; a "can't tell" keeps what was shown last
     local class = ClassBuffNeeded()
@@ -616,22 +675,26 @@ function Update()
             if slot == "s1" or slot == "s2" then left[#left + 1] = need else right[#right + 1] = need end
         end
     end
-    if unknown then
-        state.personal = "kept (the game is keeping auras hidden)"
-    else
-        last.personal = Arrange(class or nil, left, right)
-        state.personal = #last.personal .. " shown"
+    if on.personal then
+        if unknown then
+            state.personal = "kept (the game is keeping auras hidden)"
+        else
+            last.personal = Arrange(class or nil, left, right)
+            state.personal = #last.personal .. " shown"
+        end
+        Draw(panes.personal, last.personal)
     end
-    Draw(panes.personal, last.personal)
 
-    local miss = MissingFromGroup()
-    if miss == "unknown" then
-        state.missing = "kept (the game is keeping auras hidden)"
-    else
-        last.missing = miss
-        state.missing = #miss .. " shown"
+    if on.missing then
+        local miss = MissingFromGroup()
+        if miss == "unknown" then
+            state.missing = "kept (the game is keeping auras hidden)"
+        else
+            last.missing = miss
+            state.missing = #miss .. " shown"
+        end
+        Draw(panes.missing, last.missing)
     end
-    Draw(panes.missing, last.missing)
 end
 
 ----------------------------------------------------------------------
@@ -644,7 +707,16 @@ driver:SetScript("OnUpdate", function(_, elapsed)
     acc = acc + elapsed
     if acc < 0.5 then return end                -- auras, range and the group, twice a second
     acc = 0
+    LookForGivers()
     Update()
+end)
+-- a group member casting a talent buff: they can give it
+local giverWatch = CreateFrame("Frame")
+pcall(giverWatch.RegisterEvent, giverWatch, "UNIT_SPELLCAST_SUCCEEDED")
+giverWatch:SetScript("OnEvent", function(_, _, unit, _, spellID)
+    if type(unit) ~= "string" or not (unit:match("^party%d") or unit:match("^raid%d")) then return end
+    local c = ClassOfBuff(Plain(spellID) and SpellName(spellID, nil))
+    if c and MarkSeen(NameOf(unit), c) then Update() end
 end)
 -- your casts: which buff, and on whom
 local GROUP_IDS = { 21849, 21562, 23028, 25782, 25898, 25894, 25895, 25890, 25899 }   -- the group versions

@@ -2,7 +2,7 @@
 ## Title: SKTools
 ## Notes: Profession database with map pins, action bars that show on mouseover, nameplate quest marks, combo points and a Hunter range crescent, a minimap button box, and cooldown panes with health, power and cast bars. /skt for settings.
 ## Author: Scotskoogen-Chris
-## Version: 3.7.4
+## Version: 3.8.1
 ## IconTexture: Interface\AddOns\SKTools\Media\Logo
 ## SavedVariables: SKToolsDB, SKToolsLog
 ## SavedVariablesPerCharacter: SKToolsCharDB
@@ -36,6 +36,7 @@ Modules\ActionBar\Options.lua
 
 # Buff widgets (personal buffs, missing class buffs)
 Modules\Widgets\Buffs.lua
+Modules\Widgets\PvP.lua
 Modules\Widgets\Options.lua
 
 # Cursor (combat glow, Alt tooltips)
