@@ -57,6 +57,23 @@ local function Build(panel)
     panel.copyNote = W.Note(panel, "", L, -236, 330)
 
     ------------------------------------------------------------------
+    -- things about this character (more may come here)
+    W.Header(panel, "Character specific information", L, -290, 330)
+    panel.respec = W.Note(panel, "", L, -316, 330)
+    -- the countdown kept current while the tab is open
+    local tick = CreateFrame("Frame", nil, panel)
+    local acc = 0
+    tick:SetScript("OnUpdate", function(_, elapsed)
+        acc = acc + elapsed
+        if acc < 30 then return end
+        acc = 0
+        if ns.Respec then panel.respec:SetText(ns.Respec.Text()) end
+    end)
+    if ns.Respec then
+        ns.Respec.OnChange = function() if panel:IsShown() then panel.respec:SetText(ns.Respec.Text()) end end
+    end
+
+    ------------------------------------------------------------------
     W.Header(panel, "What is shared", R, -8, 330)
 
     W.Note(panel, "|cffffd200Follows the choice on the left|r\nEverything on the Profession DB, Action Bar, "
@@ -67,7 +84,7 @@ local function Build(panel)
         R, -92, 330)
 
     W.Note(panel, "|cffffd200Always per character|r\nWhat you are tracking on the maps, the Profession DB "
-        .. "window's profession and list mode, and the quests a character has already seen.", R, -160, 330)
+        .. "window's profession and list mode, the quests a character has already seen, and its talent respec timer.", R, -160, 330)
 
     W.Header(panel, "Characters with their own settings", R, -230, 330)
     panel.chars = W.Note(panel, "", R, -256, 330)
@@ -86,6 +103,8 @@ local function Build(panel)
         self.toChar:SetShown(using)
         self.toAcc:SetShown(using)
         self.copyNote:SetText(using and "" or "Copying is available once this character has its own settings.")
+
+        if ns.Respec then self.respec:SetText(ns.Respec.Text()) end
 
         local names = {}
         for name in pairs(ns.account.charProfiles) do names[#names + 1] = name end

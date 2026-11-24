@@ -146,6 +146,7 @@ Data files live in `Modules/ProfessionDB/Data/` and call
 
 Because of the GPLv3 data, the combined addon is licensed GPLv3 (`LICENSE.txt`).
 
+3.12.0: Profiles tab: new "Character specific information" section. First in it: a talent respec timer for each character. It notices each reset and the price paid by itself, then shows what the next reset costs and counts down to each 7-day drop. If the trainer asks a different price, it notes that in the log and follows the trainer from then on.
 3.11.3: Quest tracker as the game's: each marker on a dark edge (more contrast for the rim and glow); finished quests on a gold disc with a dark question mark; a finished quest with objectives shows one line, "Ready for turn-in" (the game's own words), instead of its objectives.
 3.11.2: Quest tracker: the quest count sits at the right of the title bar, just before the fold button.
 3.11.1: Quest tracker: how many quests you have of the most you can, "12/40", next to the title (every quest in the log, tracked or not; red when full).
