@@ -182,11 +182,12 @@ end
 local GOLD = { 1, 0.82, 0 }
 local CIRCLE = ns.MEDIA .. "Circle"
 local GLOW = ns.MEDIA .. "CircleGlow"
--- the markers' colours, from the game's: fill top / bottom, rim, dots
+-- the markers' colours, from the game's: fill top / bottom, rim, dots (all of them sit on a dark edge)
+local EDGE = { 0.07, 0.04, 0.02 }
 local LOOK = {
     arrow    = { top = { 1, 0.94, 0.48 }, bottom = { 0.91, 0.64, 0.07 }, rim = { 0.54, 0.36, 0.07 }, dot = { 0.29, 0.15, 0.02 } },
-    progress = { top = { 0.48, 0.14, 0.14 }, bottom = { 0.24, 0.04, 0.04 }, rim = { 0.79, 0.65, 0.29 }, dot = { 1, 0.85, 0.54 } },
-    done     = { top = { 0.43, 0.33, 0.08 }, bottom = { 0.23, 0.16, 0.02 }, rim = { 0.79, 0.65, 0.29 }, dot = { 1, 0.83, 0.29 } },
+    progress = { top = { 0.48, 0.14, 0.14 }, bottom = { 0.24, 0.04, 0.04 }, rim = { 0.79, 0.65, 0.29 }, dot = { 1, 0.9, 0.75 } },
+    done     = { top = { 0.98, 0.84, 0.3 }, bottom = { 0.8, 0.52, 0.05 }, rim = { 0.45, 0.29, 0.06 }, dot = { 0.22, 0.11, 0.02 } },
 }
 -- a texture shaded from top to bottom (falls back to one colour on clients without gradients)
 local function Shade(tex, top, bottom)
@@ -322,14 +323,19 @@ local function Marker(b)
     local m = CreateFrame("Button", nil, b)
     -- from our own round pictures (Media\Circle, Media\CircleGlow): a soft glow (the quest the arrow
     -- points at), the rim, the shaded fill on it, then three round dots or a question mark
-    m.glow = m:CreateTexture(nil, "BACKGROUND", nil, -1)
+    m.glow = m:CreateTexture(nil, "BACKGROUND", nil, -2)
     m.glow:SetTexture(GLOW)
     m.glow:SetPoint("CENTER")
     m.glow:SetBlendMode("ADD")
     m.glow:Hide()
+    -- a dark edge round the whole marker, as the game's: the rim and the glow stand out against it
+    m.edge = m:CreateTexture(nil, "BACKGROUND", nil, -1)
+    m.edge:SetTexture(CIRCLE)
+    m.edge:SetAllPoints()
+    m.edge:SetVertexColor(EDGE[1], EDGE[2], EDGE[3], 1)
     m.ring = m:CreateTexture(nil, "BACKGROUND", nil, 0)
     m.ring:SetTexture(CIRCLE)
-    m.ring:SetAllPoints()
+    m.ring:SetPoint("TOPLEFT", 1, -1); m.ring:SetPoint("BOTTOMRIGHT", -1, 1)
     m.bg = m:CreateTexture(nil, "BACKGROUND", nil, 1)
     m.bg:SetTexture(CIRCLE)
     m.bg:SetPoint("TOPLEFT", 2, -2); m.bg:SetPoint("BOTTOMRIGHT", -2, 2)
@@ -428,6 +434,10 @@ local function Objectives(q)
             if t and t ~= "" then out[#out + 1] = { text = "- " .. t, done = Plain(o.finished) == true } end
         end
     end
+    -- done, with objectives: one line saying so, in the game's words (as its tracker does)
+    if q.complete and #out > 0 then
+        return { { text = Plain(_G.QUEST_WATCH_QUEST_READY) or "Ready for turn-in", done = false, plain = true } }
+    end
     if #out == 0 then
         local summary
         if q.complete and _G.GetQuestLogCompletionText and q.index then summary = Ask(GetQuestLogCompletionText, q.index) end
@@ -437,7 +447,7 @@ local function Objectives(q)
         if summary and summary ~= "" then
             out[1] = { text = summary, done = false, plain = true }
         else
-            out[1] = { text = q.complete and "Ready to hand in" or "", done = false, plain = true }
+            out[1] = { text = q.complete and (Plain(_G.QUEST_WATCH_QUEST_READY) or "Ready for turn-in") or "", done = false, plain = true }
         end
     end
     return out
@@ -561,14 +571,14 @@ Redraw = function()
             -- arrow points at is lit yellow, with a glow round it and a wider rim (told apart by shape too)
             b.poi:Show()
             local arrow = superTracked ~= nil and superTracked == q.questID
-            local look = arrow and LOOK.arrow or (q.complete and LOOK.done or LOOK.progress)
+            local look = (arrow and not q.complete) and LOOK.arrow or (q.complete and LOOK.done or LOOK.progress)
             local m = b.poi
             m.glow:SetShown(arrow)
             m.glow:SetSize(POI * 2, POI * 2)
             m.glow:SetVertexColor(1, 0.85, 0.3, 0.85)
             m.ring:SetVertexColor(look.rim[1], look.rim[2], look.rim[3], 1)
             m.bg:ClearAllPoints()
-            local rim = arrow and 2 or 1.5
+            local rim = arrow and 3 or 2.5
             m.bg:SetPoint("TOPLEFT", rim, -rim); m.bg:SetPoint("BOTTOMRIGHT", -rim, rim)
             Shade(m.bg, look.top, look.bottom)
             for _, d in ipairs(m.dots) do
