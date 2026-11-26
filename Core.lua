@@ -19,7 +19,6 @@
 local ADDON, ns = ...
 
 SKTools = ns
-ns.name = ADDON
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 local CA = C_AddOns or {}
@@ -272,19 +271,16 @@ end)
 ----------------------------------------------------------------------
 
 local TAB_ALIASES = {
-    db = "db", database = "db", profession = "db", professions = "db", prof = "db",
-    action = "action", actionbar = "action", bar = "action", mouseover = "action", hover = "action", fade = "action", quests = "quests", quest = "quests", tracker = "quests",
-    widgets = "widgets", widget = "widgets", buffs = "widgets",
-    cursor = "cursor", mouse = "cursor", glow = "cursor",
-    keybinds = "keybinds", keys = "keybinds", binds = "keybinds", bindings = "keybinds",
-    cooldowns = "cooldowns", cd = "cooldowns", cdm = "cooldowns",
-    nameplate = "nameplate", nameplates = "nameplate", plates = "nameplate", healthbar = "nameplate", designer = "nameplate",
-    marks = "nameplate", quest = "nameplate", combo = "nameplate",
-    hunter = "nameplate", range = "nameplate", rangebar = "nameplate", crescent = "nameplate",
-    feral = "nameplate", cat = "nameplate", claw = "nameplate", shred = "nameplate",
-    prd = "cooldowns", resource = "cooldowns", resources = "cooldowns", bars = "cooldowns", personal = "cooldowns",
-    profile = "profiles", profiles = "profiles",
-    box = "buttons", buttons = "buttons", buttonbox = "buttons", minimapbuttons = "buttons",
+    db = "db", prof = "db",
+    action = "action", mouseover = "action", bars = "action",
+    quests = "quests", quest = "quests", tracker = "quests",
+    widgets = "widgets", buffs = "widgets",
+    cursor = "cursor",
+    keybinds = "keybinds", keys = "keybinds",
+    cooldowns = "cooldowns", cd = "cooldowns", prd = "cooldowns",
+    nameplate = "nameplate", nameplates = "nameplate", plates = "nameplate", marks = "nameplate", range = "nameplate",
+    profiles = "profiles", profile = "profiles",
+    buttons = "buttons", box = "buttons",
 }
 ns.TAB_ALIASES = TAB_ALIASES
 
@@ -421,23 +417,6 @@ BuildLog = function()
     end
 end
 
--- armed by /skt cddebug login: two cooldown reports just after the next login or reload (for things
--- that only show for a few seconds then)
-do
-    local f = CreateFrame("Frame")
-    f:RegisterEvent("PLAYER_LOGIN")
-    f:SetScript("OnEvent", function()
-        if type(SKToolsLog) ~= "table" or not SKToolsLog.armLogin then return end
-        SKToolsLog.armLogin = nil
-        for _, secs in ipairs({ 1, 6 }) do
-            C_Timer.After(secs, function()
-                if ns.Cooldowns and ns.Cooldowns.Debug then
-                    ns.Report("cddebug (" .. secs .. " s after login)", function(out) ns.Cooldowns.Debug(out) end)
-                end
-            end)
-        end
-    end)
-end
 
 -- run a report: its lines go to the log (not the chat); one line in chat says where it went
 function ns.Report(title, fn, open)
@@ -498,14 +477,47 @@ SlashCmdList.SKTOOLSRELOAD = function() ReloadUI() end
 
 SLASH_SKTOOLS1 = "/skt"
 SLASH_SKTOOLS2 = "/sktools"
+-- /skt debug <part>: what each part sees, into the report log (and opened)
+local DEBUG = {
+    plates = function(out) ns.Plates.Debug(out) end,
+    platelist = function(out) ns.Plates.List(out) end,
+    icons = function(out) if ns.Feral and ns.Feral.Debug then ns.Feral.Debug(out) end end,
+    buffs = function(out) if ns.Buffs and ns.Buffs.Debug then ns.Buffs.Debug(out) end end,
+    totems = function(out) if ns.Totems and ns.Totems.Debug then ns.Totems.Debug(out) end end,
+    cd = function(out) if ns.Cooldowns and ns.Cooldowns.Debug then ns.Cooldowns.Debug(out) end end,
+    box = function(out) if ns.ButtonBox and ns.ButtonBox.Probe then ns.ButtonBox.Probe(out) end end,
+}
+local DEBUG_LIST = "plates | platelist | icons | buffs | totems | cd | box"
+
+local function Help()
+    ns.Print("version " .. tostring(ns.version) .. " - commands:")
+    print("  /skt  - open or close the settings window")
+    print("  /skt db | mouseover | quests | widgets | cursor | keybinds | cooldowns | nameplate | buttons | profiles  - open that tab")
+    print("  /skt map [search]  - the Profession DB window (/skt map help for more)")
+    print("  /skt minimap  - open or close the minimap button box")
+    print("  /skt marks help  - quest marks: test mode, debug, quest-starter mobs")
+    print("  /skt range help  - Hunter range checks: debug, watch, nameplate distance")
+    print("  /skt debug " .. DEBUG_LIST .. "  - what that part sees, into the report log")
+    print("  /skt cpu [seconds]  - how much CPU each part takes (10 seconds unless you say)")
+    print("  /skt log  - the report log, to read and copy (/skt log clear empties it)")
+    print("  /rl  - reload the UI")
+end
+
 SlashCmdList.SKTOOLS = function(msg)
-    local cmd = strtrim(msg or ""):lower()
+    local raw = strtrim(msg or "")
+    local cmd = raw:lower()
+    local word, rest = raw:match("^(%S*)%s*(.-)$")
+    word = (word or ""):lower()
     if cmd == "" or cmd == "config" or cmd == "options" then
         ns.ToggleSettings()
+    elseif word == "map" or word == "window" then
+        if SKToolsProfessionDB and SKToolsProfessionDB.Command then SKToolsProfessionDB.Command(rest) end
+    elseif word == "marks" and rest ~= "" then
+        if ns.Marks and ns.Marks.Command then ns.Marks.Command(rest) end
+    elseif word == "range" and rest ~= "" then
+        if ns.RangeBar and ns.RangeBar.Command then ns.RangeBar.Command(rest) end
     elseif TAB_ALIASES[cmd] then
         ns.OpenSettings(TAB_ALIASES[cmd])
-    elseif cmd == "map" or cmd == "window" then
-        if SKToolsProfessionDB and SKToolsProfessionDB.Toggle then SKToolsProfessionDB:Toggle() end
     elseif cmd == "minimap" then
         ns.ToggleMinimapButton()                -- opens / closes the button box
     elseif cmd == "cpu" or cmd:match("^cpu %d+$") then
@@ -515,39 +527,15 @@ SlashCmdList.SKTOOLS = function(msg)
     elseif cmd == "log clear" then
         Log(); SKToolsLog.lines = {}
         ns.Print("report log cleared")
-    elseif cmd == "platesdebug" then
-        ns.Report(cmd, function(out) ns.Plates.Debug(out) end, true)
-    elseif cmd == "platelist" then
-        ns.Report(cmd, function(out) ns.Plates.List(out) end, true)
-    elseif cmd == "feraldebug" or cmd == "icondebug" then
-        if ns.Feral and ns.Feral.Debug then ns.Report(cmd, function(out) ns.Feral.Debug(out) end, true) end
-    elseif cmd == "healtrace" then
-        if ns.Cooldowns and ns.Cooldowns.HealTrace then
-            local on = ns.Cooldowns.HealTrace()
-            ns.Print(on and "heal trace on: each heal you cast goes to the log (predicted, landed, missing health). /skt healtrace again to stop, /skt log to read."
-                or "heal trace off")
+    elseif word == "debug" then
+        local part = rest:lower()
+        if DEBUG[part] then
+            ns.Report("debug " .. part, DEBUG[part], true)
+        else
+            ns.Print("/skt debug " .. DEBUG_LIST)
         end
-    elseif cmd == "cddebug login" then
-        Log(); SKToolsLog.armLogin = true
-        ns.Print("next login or /reload: a cddebug report 1 s and 6 s in, saved to the log. /rl now, then /skt log.")
-    elseif cmd == "cddebug" then
-        if ns.Cooldowns and ns.Cooldowns.Debug then ns.Report(cmd, function(out) ns.Cooldowns.Debug(out) end, true) end
-    elseif cmd == "totemdebug" then
-        if ns.Totems and ns.Totems.Debug then ns.Report(cmd, function(out) ns.Totems.Debug(out) end, true) end
-    elseif cmd == "buffdebug" then
-        if ns.Buffs and ns.Buffs.Debug then ns.Report(cmd, function(out) ns.Buffs.Debug(out) end, true) end
-    elseif cmd == "boxdebug" then
-        if ns.ButtonBox and ns.ButtonBox.Probe then ns.Report(cmd, function(out) ns.ButtonBox.Probe(out) end, true) end
     else
-        ns.Print("version " .. tostring(ns.version) .. " - commands:")
-        print("  /skt  - open or close the settings window")
-        print("  /skt db | action | widgets | cursor | keybinds | cooldowns | nameplate | buttons | profiles  - open that settings tab")
-        print("  /skt map  - open or close the Profession DB window (also /sdb)")
-        print("  /skt minimap  - open or close the minimap button box\n  /skt platesdebug | platelist | icondebug  - print what the game tells the plates / every plate it has / the ready icons\n  /skt buffdebug  - print what the buff widgets see\n  /skt totemdebug - print the totems and Lightning Shield charges seen\n  /skt cddebug    - print what the cooldown panes show")
-        print("  /skt cpu [seconds]  - measure how much CPU each part takes (10 seconds unless you say)")
-        print("  /skt log  - the report log: every /skt report, to read and copy (/skt log clear empties it)")
-        print("  /skt healtrace  - log each heal you cast: what the game predicted and what landed")
-        print("  Short commands for their own parts: /sdb, /sm, /skr (/rb)")
+        Help()
     end
 end
 

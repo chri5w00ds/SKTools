@@ -111,7 +111,6 @@ local STACKS = {
         },
     },
 }
-ns.FERAL_STACKS = STACKS
 local MAX_ICONS = 3
 local function PlayerClass()
     local ok, _, class = pcall(UnitClass, "player")
@@ -982,6 +981,10 @@ local function Update()
         if not (UnitCanAttack and UnitCanAttack("player", "target")) or (UnitIsDead and UnitIsDead("target")) then
             return Hide("no attackable target")
         end
+    end
+    -- the preview only on an enemy: friendly players and NPCs keep Blizzard's own plate
+    if previewing and ns.FriendlyTarget() then
+        return Hide("preview: the target is friendly")
     end
 
     local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit

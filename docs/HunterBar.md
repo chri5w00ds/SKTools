@@ -1,105 +1,30 @@
-> The Hunter range bar part of SKTools. The commands below work in SKTools.
+> How SKTools works out a Hunter's range to the target, shown by the range crescent on the
+> target's nameplate (settings on the Nameplates tab).
 
-# Hunter range bar
+# Hunter range detection
 
-Range and resource awareness for **WoW Forever**.
+Based on [RangeBar (Hunter)](https://github.com/AlwaysFourth/RangeBarHunter) by AlwaysFourth (MIT).
+It started as a vertical range bar; the bar is gone, and what it worked out now drives the
+crescent on your target's nameplate. It only matters on a Hunter with a bow, gun or crossbow, and
+only for targets you can attack.
 
-## Action bar tint (every class)
+| Zone                | Distance                            |
+|---------------------|-------------------------------------|
+| Melee range         | 0 - 5 yd                            |
+| **Dead zone**       | 5 - 8 yd - can't shoot, can't melee |
+| Ranged weapon range | 8 - 35 yd (41 with 3/3 Hawk Eye)    |
+| Out of range        | > max range                         |
 
-Action bar icons are tinted so you can read them at a glance:
-
-| Situation                     | Tint                                   |
-|-------------------------------|----------------------------------------|
-| Out of range                  | red                                    |
-| Not enough mana               | blue                                   |
-| Not enough energy             | yellow                                 |
-| Not enough rage / focus       | their own colours                      |
-| Out of range **and** short    | resource colour on top, red underneath where it has receded |
-
-With **Shrink as resource fills** on, the resource tint only covers the part
-of the cost you are still missing. As the resource comes back, the tint
-recedes towards the top-right corner along a 45 degree edge, which ripples
-gently while it waits. If you are also out of range, the red range layer fills
-in behind it from the bottom-left as it recedes.
-
-Every colour is picked with the colour wheel, and the tint opacity is
-adjustable so the icons underneath stay readable. Works with the default
-bars, Bartender4 and Dominos.
-
-## Combo points (Rogues and Druids)
-
-Five dots in an arc on the right of your target's level badge, filling
-clockwise from the top. Nothing shows until you have a point; then all five
-frames appear, filled ones in red with a soft glow. Dot size, distance from the
-badge, position, glow strength, background and colour are all adjustable, and
-the settings window shows a 3-point preview on your target while it is open.
-
-`/skr combo on|off` switches them on or off, `/skr combo debug` shows what the
-addon sees.
-
-## Range bar (Hunters with a ranged weapon)
-
-The range bar is a WoW Forever port of
-[RangeBar (Hunter)](https://github.com/AlwaysFourth/RangeBarHunter) by
-AlwaysFourth (MIT). It only appears on a Hunter with a bow, gun or crossbow
-equipped.
-
-A vertical range bar for **WoW Forever**, built around the one thing Hunters
-actually need to know: **are you in the dead zone right now?**
-
-The bar shows all four zones as faint bands. The band you are currently in
-lights up in its own color, so you can read it out of the corner of your eye
-without taking your attention off the mob.
-
-| Color  | Zone                | Distance                            |
-|--------|---------------------|-------------------------------------|
-| Orange | Melee range         | 0 - 5 yd                            |
-| Red    | **Dead zone**       | 5 - 8 yd - can't shoot, can't melee |
-| Green  | Ranged weapon range | 8 - 35 yd (41 with 3/3 Hawk Eye)    |
-| Grey   | Out of range        | > max range                         |
-
-Above the bar is the zone name (`MELEE`, `DEAD ZONE`, `SHOOT`, `TOO FAR`), below
-it the estimated distance, and the zone boundaries are labelled down the side.
-
-The bar only appears for targets you can actually attack. Friendly players and
-NPCs never show it.
-
-**Hunter with a ranged weapon only.** The bar is built on the dead zone, which
-is a Hunter mechanic - ranged weapons have an 8 yard minimum and nothing else in
-Classic does. On other classes, or with no bow, gun or crossbow equipped, the
-bar stays hidden; the action bar tint keeps working.
-
-## Installing
-
-It comes with SKTools: put the `SKTools` folder in your WoW Forever `Interface/AddOns/` folder.
-Don't run it next to the original RangeBar (Hunter), since both draw the same bar.
-
-## Using it
-
-Click the minimap button, or type `/skr` (also `/rangebar` and `/rb`) to open the options
-window. Everything is in there - it is not slash-command-only.
+## Commands
 
 ```
-/rangebar               open the options window
-/rb move | lock         move the bar with the mouse (also right-click the
-                        minimap button)
-/rb center              snap the bar back to the middle of the screen
-/rb height N            bar height in pixels (default 220)
-/rb width N             bar width in pixels (default 26)
-/rb alpha N             0.1 - 1
-/rb max N               max ranged range, 0 = auto (35 + Hawk Eye)
-/rb min N               minimum ranged range / top of the dead zone (default 8)
-/rb ticksize N          size of the distance numbers beside the bar (6 - 24)
-/rb plates N            nameplate distance used to help spot the dead zone
-/rb text on|off         zone + distance text
-/rb ticks on|off        tick lines and numbers
-/rb autohide on|off     hide the bar when you have no target (default on)
-/rb minimap on|off      show the minimap button (default on)
-/rb debug               print what every range check currently reports
-/rb reset               restore defaults
+/skt range debug        print what every range check reports on your target
+/skt range watch        print a line whenever the zone or auto attack changes
+/skt range plates N     nameplate distance used to help spot the dead zone
+/skt range max N        max ranged range, 0 = auto (35 + Hawk Eye)
+/skt range min N        minimum ranged range / top of the dead zone (default 8)
+/skt range reset        restore defaults
 ```
-
-Settings and position are saved per account.
 
 ## How the range is worked out
 
@@ -117,8 +42,8 @@ checks. The **number is an estimate**, which is why it reads as a bracket like
 * `CheckInteractDistance` at 9.9 / 11.11 / 28 yd, plus **Hunter's Mark** at
   100 yd, to narrow the estimate.
 
-Max ranged range is auto-detected as 35 yd plus 2 yd per point of Hawk Eye. The
-top of the bar's scale is fixed at 42 yd, which fits both 35 and 41.
+Max ranged range is auto-detected as 35 yd plus 2 yd per point of Hawk Eye.
+
 
 ### Why the dead zone is hard, and how this addon does it
 
@@ -147,7 +72,7 @@ below 35. In order of preference the addon uses:
 
 If your nameplate distance is set below your max ranged range, detection is
 exact. Set above it, there is a thin sliver just out of shot range that can read
-as dead zone - `/rb plates 20` if you want that gone.
+as dead zone - `/skt range plates 20` if you want that gone.
 
 **Never use auto attack (`Attack`, spell 6603) or wand `Shoot` as range checks.**
 They report "in range" for any attackable unit at any distance, which makes the
@@ -156,7 +81,7 @@ melee band swallow every other zone. Noted here because it is an easy trap.
 ## Notes
 
 * If you play on a realm where the Hunter dead zone has been removed, run
-  `/rb min 5` and the red band disappears.
+  `/skt range min 5` and the dead zone disappears.
 * Testing range behavior is easiest on a **critter** - squirrel, rabbit,
   chicken. They are attackable NPCs, so every check behaves as it would on a
   real mob, and they cannot hurt you, which matters on Hardcore.
@@ -165,9 +90,9 @@ melee band swallow every other zone. Noted here because it is an easy trap.
 
 The Forever client runs on the modern game engine, which can hide some API
 answers from addons ("secret values"), mostly in combat. Any hidden answer is
-treated as "no answer" rather than causing an error, so the bar keeps working
-on whatever checks are still available. `/skr debug` shows how many hidden
-answers it has met and whether the combat log is available.
+treated as "no answer" rather than causing an error, so detection keeps working
+on whatever checks are still available. `/skt range debug` shows how many hidden
+answers it has met.
 
 ## License
 

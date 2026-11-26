@@ -56,7 +56,6 @@ local CLASS_BUFFS = {
     WARLOCK = { id = 706,   name = "Demon Armor", group = false, also = { { 687, "Demon Skin" } } },
     SHAMAN  = { id = 324,   name = "Lightning Shield", group = false },
 }
-ns.CLASS_BUFFS = CLASS_BUFFS
 
 local REBIRTH = "Rebirth"
 local NONE = "none"

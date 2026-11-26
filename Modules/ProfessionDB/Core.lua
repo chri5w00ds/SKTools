@@ -321,8 +321,8 @@ function DB:CountTracked()
     return n
 end
 
-SLASH_SKTOOLSPROF1 = "/sdb"
-SlashCmdList.SKTOOLSPROF = function(msg)
+-- /skt map ... (/skt map on its own opens or closes the window)
+function DB.Command(msg)
     msg = strtrim(msg or "")
     local cmd, rest = msg:match("^(%S*)%s*(.-)$")
     cmd = cmd:lower()
@@ -331,33 +331,27 @@ SlashCmdList.SKTOOLSPROF = function(msg)
     elseif cmd == "chance" and tonumber(rest) then
         DB.db.minChance = math.max(0, math.min(100, tonumber(rest)))
         DB:RefreshPins(); DB:Print("minimum chance set to " .. DB.db.minChance .. "%.")
-    elseif cmd == "minimap" then
-        DB.db.minimap = not DB.db.minimap; DB:RefreshPins()
-        DB:Print("minimap pins " .. (DB.db.minimap and "on" or "off") .. ".")
-    elseif cmd == "map" then
+    elseif cmd == "pins" then
         DB.db.worldmap = not DB.db.worldmap; DB:RefreshPins()
         DB:Print("world map pins " .. (DB.db.worldmap and "on" or "off") .. ".")
+    elseif cmd == "minipins" then
+        DB.db.minimap = not DB.db.minimap; DB:RefreshPins()
+        DB:Print("minimap pins " .. (DB.db.minimap and "on" or "off") .. ".")
     elseif cmd == "debug" then
         DB:Debug()
-    elseif cmd == "button" then
-        ns.ToggleMinimapButton()
-    elseif cmd == "settings" or cmd == "config" or cmd == "options" then
-        ns.OpenSettings("db")
     elseif cmd == "reset" then
         DB.db.point, DB.db.mapPoint = nil, nil
         if DB.UI and DB.UI.frame then DB.UI:Place() end
         DB:Print("window position reset.")
     elseif cmd == "help" or cmd == "?" then
         DB:Print("commands:")
-        print("  /sdb  - open or close the window")
-        print("  /sdb <text>  - open and search, e.g. /sdb devilsaur")
-        print("  /sdb clear  - remove everything from the maps")
-        print("  /sdb chance <0-100>  - minimum drop/skin chance shown on the maps")
-        print("  /sdb map | minimap  - toggle world map / minimap pins")
-        print("  /sdb settings  - open the Profession DB settings tab")
-        print("  /sdb button  - open or close the minimap button box")
-        print("  /sdb reset  - put the window back where it started")
-        print("  /sdb debug  - show what loaded (paste this if something is missing)")
+        print("  /skt map  - open or close the window")
+        print("  /skt map <text>  - open and search, e.g. /skt map devilsaur")
+        print("  /skt map clear  - remove everything from the maps")
+        print("  /skt map chance <0-100>  - minimum drop/skin chance shown on the maps")
+        print("  /skt map pins | minipins  - toggle world map / minimap pins")
+        print("  /skt map reset  - put the window back where it started")
+        print("  /skt map debug  - show what loaded (paste this if something is missing)")
     else
         DB:Toggle(msg)
     end

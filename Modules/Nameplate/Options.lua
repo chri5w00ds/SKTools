@@ -98,7 +98,7 @@ local function BuildSubs(panel, C3, CW)
     combo.note = W.Note(combo, "", C3, -480, CW)
     function combo:OnSync()
         self.note:SetText(ns.Combo.Eligible()
-            and "Your target shows 3 points as a preview."
+            and "An enemy target shows 3 points as a preview (friendly ones keep the game's own plate)."
             or "This character has no combo points, so nothing shows outside this preview.")
     end
 
@@ -184,8 +184,8 @@ local function BuildSubs(panel, C3, CW)
         cres:SyncAll()
     end), C3, -474)
     local dbg = cres:Add(W.Button(cres, "Debug to chat", 108, function()
-        SlashCmdList["SKTOOLSRANGE"]("crescent debug")
-        SlashCmdList["SKTOOLSRANGE"]("debug")
+        ns.RangeBar.Command("crescent debug")
+        ns.RangeBar.Command("debug")
     end), C3 + 112, -474)
     dbg.tooltip = "Prints what the crescent and the range checks see on your target."
 

@@ -88,7 +88,7 @@ end
 local previewing = false
 local cachePlate, cacheAnchor, cacheHow, cacheAge = nil, nil, nil, 0
 local eligible, eligibleAge = false, -100
-local state = "not run yet"       -- for /skr crescent debug
+local state = "not run yet"       -- for /skt range crescent debug
 
 local function Build()
     holder = CreateFrame("Frame", "SKToolsCrescent", UIParent)
@@ -220,6 +220,10 @@ local function Update()
     local zone
     if previewing then
         zone = "SHOOT"
+        -- the preview only on an enemy: friendly players and NPCs keep Blizzard's own plate
+        if previewing and ns.FriendlyTarget() then
+            return Hide("preview: the target is friendly")
+        end
     else
         -- Hunter with a bow; checked once a second, not every frame
         local now = GetTime()

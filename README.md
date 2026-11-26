@@ -23,13 +23,13 @@ corner portrait.
 ## Use
 
 - **`/skt`**, the bee button (right-click) or the AddOns drop-down opens the settings window, with one
-  tab per part. `/skt db | action | nameplate | cooldowns | widgets | buttons | profiles` opens a tab directly.
+  tab per part. `/skt db | mouseover | quests | widgets | cursor | keybinds | cooldowns | nameplate | buttons | profiles` opens a tab directly.
 - **Profession DB window**: the book button on the world map, a right-click on the minimap
-  button, or `/sdb` (`/sdb <text>` searches). Opened while the world map is up it sits beside
+  button, or `/skt map` (`/skt map <text>` searches). Opened while the world map is up it sits beside
   the map in a narrow layout and closes and re-opens with the map; opened on its own it is the
   full two-column window. `>>` / `<<` in its title bar switches layout.
-- Short chat commands for their own parts: `/sdb`, `/sm`, `/skr` (`/rb`, `/rangebar`). Add `help`
-  for the list.
+- Commands for some parts: `/skt map help`, `/skt marks help`, `/skt range help`. `/skt debug <part>`
+  writes what a part sees to the report log (`/skt log`). `/skt help` lists everything; `/rl` reloads.
 
 ## Minimap button box
 
@@ -65,7 +65,7 @@ Version 2.0 redraws every enemy nameplate with its own square-edged frames. Bliz
 - **Left of the bar** (all scaling with the target): combo points (Rogue, Druid) or the Hunter crescent, hugging the bar. The crescent is cut from the same arc as the combo points so they share one slot. Left of those: Shred over Claw, almost touching, with the Bite / Shifting Power icon laid over the middle of the pair, leaving 30% of each showing.
 - **Crowd-control icon:** Blizzard's shared CC icon is moved under the cast bar.
 
-If something looks wrong in the game, `/skt platesdebug` (or "Debug to chat" on the Plates tab) lists what the game gave us: which API calls exist, what Blizzard's plate holds, and whether the cast bar has a timer. Forever can hide health and cast values from addons; they are only ever handed to status bars and text, never compared.
+If something looks wrong in the game, `/skt debug plates` (or "Debug to chat" on the Plates tab) lists what the game gave us: which API calls exist, what Blizzard's plate holds, and whether the cast bar has a timer. Forever can hide health and cast values from addons; they are only ever handed to status bars and text, never compared.
 
 ## Feral cat: Claw and Shred icons
 
@@ -89,7 +89,7 @@ for skills you cannot cast). An icon is lit when its skill could be used right n
 Lit means full colour, a bright rim, a soft glow and a gentle pulse. Not ready means a grey,
 dimmed icon with no rim, so the two states differ by more than colour. "Hide when not ready"
 removes the dimmed ones. Horizontal / Vertical / Icon size / Gap sliders and Claw, Shred,
-Glow and Pulse switches are on the Nameplate tab under **Cat skills**; `/skt feral` opens it.
+Glow and Pulse switches are on the Nameplate tab under **Cat skills**; `/skt nameplate` opens it.
 Shred's "must be behind the target" rule is not something addons can read, so it is not
 part of "ready".
 
@@ -118,8 +118,7 @@ It has a thin classic silver rim and a soft glow in the zone colour (the Silver 
 boxes switch them off). While it shows, Blizzard's shared crowd-control icon, normally right
 under the level badge, is moved out to its right and handed back when the crescent hides ("Move
 CC icons aside"). Position, size, colours and the range settings are on the Nameplate tab under
-**Range crescent**. `/skr bar on` brings the old bar back for comparison; `docs/HunterBar.md`
-describes how the range detection works.
+**Range crescent**. `docs/HunterBar.md` describes how the range detection works.
 
 ## Profiles
 
@@ -146,6 +145,12 @@ Data files live in `Modules/ProfessionDB/Data/` and call
 
 Because of the GPLv3 data, the combined addon is licensed GPLv3 (`LICENSE.txt`).
 
+3.12.5: Quest tracker: the title is back on the bar's shadow (18 px in), still 2 px lower. The PvP swords always keep their spot at the right of the line below the bar, even when folded or when no region is listed.
+3.13.0: Tidy-up. The old vertical Hunter range bar is gone, along with its settings and commands; the range detection stays for the crescent. /sdb, /sm, /skr, /rb and /rangebar are folded into /skt (/skt map, /skt marks, /skt range). The seven debug reports are one command, /skt debug <part>. /skt healtrace and /skt cddebug login are gone, since their problems are solved. Also gone: unused code and the quest marks' pre-merge settings conversions. Fixed: /skt quest opened Nameplates instead of Quests. The tab shortcuts are trimmed, the help lists everything, and the starter profile is refreshed from the current setup.
+3.12.4: Quest tracker: the title and count sit 2 px lower, giving room above the capitals, and the title starts at the left now that the swords have moved. The PvP swords are on the first region line at the right, before its fold sign, or in the title bar when no region is listed. The region fold sign is raised to the middle of its line.
+3.12.3: Quest tracker: the PvP swords sit 2 px further right and 2 px lower.
+3.12.2: Quest tracker: the PvP switch is just the crossed swords, with no box behind it, and sits 4 px closer to the title, clear of the bar's end caps. It is grey for your quests and in colour while the PvP list shows.
+3.12.1: Friendly players get nothing from SKTools, whether targeted, hovered or under a settings preview or test mode. Combo points and totems stay off friendly targets too. The game's own buff row on friendly plates (your heals over time) is hidden outside instances, where the game allows it.
 3.12.0: Profiles tab: new "Character specific information" section. First in it: a talent respec timer for each character. It notices each reset and the price paid by itself, then shows what the next reset costs and counts down to each 7-day drop. If the trainer asks a different price, it notes that in the log and follows the trainer from then on.
 3.11.3: Quest tracker as the game's: each marker on a dark edge (more contrast for the rim and glow); finished quests on a gold disc with a dark question mark; a finished quest with objectives shows one line, "Ready for turn-in" (the game's own words), instead of its objectives.
 3.11.2: Quest tracker: the quest count sits at the right of the title bar, just before the fold button.

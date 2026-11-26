@@ -104,7 +104,7 @@ local function Build(panel)
 
     W.Note(panel, "Opened while the world map is up, the database sits beside the map and closes "
         .. "and re-opens with it. Drag it anywhere; the spot beside the map and the spot on its own "
-        .. "are remembered separately. /sdb opens it from chat, /sdb <text> searches.",
+        .. "are remembered separately. /skt map opens it from chat, /skt map <text> searches.",
         R, -238, 330)
 
     W.Note(panel, "Loot, skinning and recipe data: CMaNGOS classic-db. Spawn points and vendors: "

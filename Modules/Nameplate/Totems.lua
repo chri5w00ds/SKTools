@@ -394,6 +394,10 @@ local function Update()
     elseif previewing then
         charges = 2
     end
+    -- nothing on a friendly target (players and NPCs keep Blizzard's own plate), preview or not
+    if ns.FriendlyTarget() then
+        return Hide("preview: the target is friendly")
+    end
     if #list == 0 and not shieldOn then return Hide("no totems down" .. (shieldCharges > 0 and ", out of combat" or "")) end
 
     local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit
@@ -492,7 +496,7 @@ local function Adopt(id)
     shieldInstance = id
     shieldCharges = SHIELD_MAX
 end
--- the last few aura changes, for /skt totemdebug: what the game tells us in combat
+-- the last few aura changes, for /skt debug totems: what the game tells us in combat
 local auraLog = {}
 local function LogAura(info)
     local function ids(list)

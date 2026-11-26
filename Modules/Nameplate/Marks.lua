@@ -88,7 +88,6 @@ function M.ResetSettings()
     wipe(db)
     CopyDefaults(M.DEFAULTS, db)
     db.starters = starters          -- never throw away learned mobs
-    db.dbVersion = 5
 end
 
 local function Normalize(text)
@@ -494,7 +493,14 @@ local function UpdateUnit(unit)
     activeUnits[unit] = plate
     -- while the settings window is open, preview only on your target (or on
     -- every plate if you have no target) so the rest show their real state
-    local preview = M.previewing and (not UnitExists("target") or UnitIsUnit(unit, "target"))
+    -- Friendly players never get anything, preview and test mode included; a friendly player
+    -- as target counts as no target, so the other plates show the preview.
+    local function FriendlyPlayer(u)
+        return safe(UnitIsPlayer(u)) == true and safe(UnitCanAttack("player", u)) == false
+    end
+    if FriendlyPlayer(unit) then Apply(plate, ScanUnit(unit)); return end
+    local preview = M.previewing
+        and (not UnitExists("target") or FriendlyPlayer("target") or UnitIsUnit(unit, "target"))
     Apply(plate, (M.manualTest or preview) and TEST_RESULT or ScanUnit(unit))
 end
 
@@ -582,31 +588,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
         if arg1 ~= ADDON then return end
         local root, char = ns.InitDB()
         db = root.marks
-        -- settings renamed in 0.2
-        if db.size then db.iconSize, db.size = db.size, nil end
-        db.side = nil
-        db.dotSpacing = nil     -- spacing is automatic since 0.4
-        -- 0.4.2: dot X used to be the left dot, now it's the middle of the
-        -- row, so an old saved value would shove the row sideways
-        if (db.dbVersion or 1) < 2 then
-            db.dotX = M.DEFAULTS.dotX
-            db.dbVersion = 2
-        end
-        -- 0.9: dots replaced by counters; tidy away the old dot settings
-        if (db.dbVersion or 2) < 4 then
-            db.dots, db.dotSize, db.dotBgAlpha, db.dotX, db.dotY, db.maxDots = nil, nil, nil, nil, nil, nil
-            db.dotColor1, db.dotColor2, db.dotColorBoth = nil, nil, nil
-            db.dbVersion = 4
-        end
-        -- 0.9.2: bigger default counter icons (unless you'd already changed them)
-        if db.dbVersion < 5 then
-            for _, side in ipairs({ db.counterLeft, db.counterRight }) do
-                if side and side.size == 12 then side.size = 14 end
-            end
-            db.dbVersion = 5
-        end
         CopyDefaults(M.DEFAULTS, db)
-        db.minimap = nil        -- the old stand-alone minimap button
         M.db = db
         charDB = char.marks
         charDB.seenQuests = charDB.seenQuests or {}
@@ -650,30 +632,21 @@ for _, e in ipairs({
 end
 
 ----------------------------------------------------------------------
--- Slash commands
+-- /skt marks ...
 ----------------------------------------------------------------------
 
 local function Help()
     Print("commands:")
-    print("  /sm  – open the Nameplate settings tab")
-    print("  /sm minimap  – show/hide the SKTools minimap button")
-    print("  /sm test  – show every icon, dots and the glow on all nameplates")
-    print("  /sm debug  – print what the nameplate marks see on your target")
-    print("  /sm starter add [questID]  – mark your target as a quest-starter dropper")
-    print("  /sm starter remove  |  /sm starter list")
+    print("  /skt marks test  – show every icon, dots and the glow on all nameplates")
+    print("  /skt marks debug  – print what the nameplate marks see on your target")
+    print("  /skt marks starter add [questID]  – mark your target as a quest-starter dropper")
+    print("  /skt marks starter remove  |  /skt marks starter list")
 end
 
-SLASH_SKTOOLSMARKS1 = "/sm"
-SlashCmdList.SKTOOLSMARKS = function(msg)
+function M.Command(msg)
     local cmd, a, b = strsplit(" ", (msg or ""):lower():trim())
 
-    if cmd == "" or cmd == "config" or cmd == "options" then
-        ns.ToggleSettings("nameplate")
-        return
-    elseif cmd == "minimap" then
-        ns.ToggleMinimapButton()
-        return
-    elseif cmd == "debug" then
+    if cmd == "debug" then
         if not UnitExists("target") then Print("target a mob first.") return end
         Print("debug for " .. (safe(UnitName("target")) or "?") ..
             "  (test mode " .. (M.manualTest and "ON" or "off") ..

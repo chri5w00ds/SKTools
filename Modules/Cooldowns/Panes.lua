@@ -58,7 +58,6 @@ local COLORS = {
     range  = { 0.95, 0.22, 0.20 },
     track  = { 0.055, 0.055, 0.065 },
 }
-ns.CDM_COLORS = COLORS
 
 local PT = (Enum and Enum.PowerType) or {}
 local MANA, RAGE, FOCUS, ENERGY = PT.Mana or 0, PT.Rage or 1, PT.Focus or 2, PT.Energy or 3
@@ -242,7 +241,6 @@ local function Rows(count, cap, grow)
     end
     return sizes, math.ceil(count / rows)
 end
-ns.CDM_Rows = Rows
 
 ----------------------------------------------------------------------
 -- Panes that grow by rows: the line pool (seams)
@@ -378,16 +376,6 @@ local function Ring(p, x, y, w, h, total, white)
     return r
 end
 -- rings for a stack of rows ({ w, h, y } each, centred): one per run of equal-width rows
-local function FrameRows(p, rows, total)
-    local i = 1
-    while i <= #rows do
-        local j = i
-        while rows[j + 1] and math.abs(rows[j + 1][1] - rows[i][1]) < 0.5 do j = j + 1 end
-        local top = rows[i][3]
-        Ring(p, -rows[i][1] / 2, top, rows[i][1], rows[j][3] + rows[j][2] - top, total)
-        i = j + 1
-    end
-end
 -- a fine dark seam across a pane at y (between bars), or down it at x (between icons)
 local function Seam(p, x, y, w, h)
     local t = p.lines:Get()
@@ -1491,49 +1479,6 @@ local function IncomingHeal()
     return _G.UnitGetIncomingHeals and Ask(UnitGetIncomingHeals, "player")
 end
 
--- /skt healtrace: for each heal you cast (on yourself), what the game predicted while you cast it
--- and what actually landed, into the log. Numbers the game hides in combat show as "hidden": trace
--- out of combat for real figures.
-local trace = { on = false }
-local function PlainNum(v) local pv = Plain(v); if type(pv) == "number" then return pv end end
-local function TraceSample()
-    -- while casting: the most the game predicted for your own heal, and in all
-    if not (trace.on and trace.cast) then return end
-    local own = _G.UnitGetIncomingHeals and PlainNum(Ask(UnitGetIncomingHeals, "player", "player"))
-    local all = PlainNum(IncomingHeal())
-    if own then trace.cast.own = math.max(trace.cast.own or 0, own) end
-    if all then trace.cast.all = math.max(trace.cast.all or 0, all) end
-    trace.cast.hp = PlainNum(Ask(UnitHealth, "player"))
-end
-local traceFrame = CreateFrame("Frame")
-traceFrame:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
-    if unit ~= "player" then return end
-    if event == "UNIT_SPELLCAST_START" then
-        local id = PlainNum(spellID)
-        local nm = id and Plain(Ask((C_Spell and C_Spell.GetSpellName) or _G.GetSpellInfo, id))
-        trace.cast = { id = id, name = nm or "?", guid = castGUID, maxHP = PlainNum(Ask(UnitHealthMax, "player")) }
-        TraceSample()
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" and trace.cast and trace.cast.guid == castGUID then
-        TraceSample()
-        local c = trace.cast
-        trace.cast = nil
-        local before = PlainNum(Ask(UnitHealth, "player")) or c.hp
-        C_Timer.After(0.4, function()
-            local after = PlainNum(Ask(UnitHealth, "player"))
-            local function N(v) return v and tostring(math.floor(v + 0.5)) or "hidden" end
-            local gain = (after and before) and (after - before) or nil
-            local missing = (c.maxHP and before) and (c.maxHP - before) or nil
-            local note = ""
-            if gain and c.own and c.own > 0 then note = (" -> %d%% of the prediction"):format(math.floor(gain / c.own * 100 + 0.5)) end
-            if after and c.maxHP and after >= c.maxHP then note = note .. " (topped up to full: capped)" end
-            ns.LogAdd("healtrace", { ("%s (%s): predicted %s (all incoming %s), landed +%s, missing before %s%s"):format(
-                tostring(c.name), tostring(c.id), N(c.own), N(c.all), N(gain), N(missing), note) })
-        end)
-    elseif (event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED") and trace.cast and trace.cast.guid == castGUID then
-        trace.cast = nil                                  -- (STOP may come before SUCCEEDED: not counted)
-    end
-end)
-
 -- healing on its way (a heal being cast on you, yours or anyone's), as on Blizzard's bars: a lighter
 -- segment starting where the health fill ends, as long as the heal is, cut off at the bar's end. It
 -- works on hidden numbers too: a bar as wide as the health bar, on the same scale, filled to the heal.
@@ -1568,7 +1513,6 @@ local function HealPrediction(p, maxHP)
     pcall(p.heal.SetMinMaxValues, p.heal, 0, maxHP)
     local incoming = IncomingHeal()
     if incoming == nil or not pcall(p.heal.SetValue, p.heal, incoming) then p.heal:SetValue(0) end
-    TraceSample()
 end
 
 -- what a cast will spend, as on Blizzard's bars: the end of the power fill picked out in a lighter
@@ -1892,16 +1836,6 @@ ns.Cooldowns = {
     end,
     Panes = function() return panes end,
     Layouts = function() return state.layouts or 0 end,
-    HealTrace = function()
-        trace.on = not trace.on
-        for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_SUCCEEDED",
-                             "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED" }) do
-            if trace.on then pcall(traceFrame.RegisterUnitEvent or traceFrame.RegisterEvent, traceFrame, e, "player")
-            else traceFrame:UnregisterEvent(e) end
-        end
-        trace.cast = nil
-        return trace.on
-    end,
     Rows = Rows,
     ResetPositions = function()
         if not db then return end

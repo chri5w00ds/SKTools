@@ -83,13 +83,6 @@ ns.PLATES_DEFAULTS = {
     swingWindow = 0.5,                      -- ...how long that is, in seconds
     hideBlizzAuras = true,                  -- Blizzard's own buff and debuff rows are hidden (the CC icon stays)
 }
-ns.PLATES_COLOR_KEYS = {
-    { "melee", "Melee" },
-    { "caster", "Casters" },
-    { "boss", "Bosses" },
-    { "neutral", "Neutral" },
-    { "friendly", "Friendly" },
-}
 -- NPC classes that mean "casts spells": everything else counts as melee
 local CASTER_CLASS = { MAGE = true, WARLOCK = true, PRIEST = true, SHAMAN = true, DRUID = true, EVOKER = true }
 
@@ -1118,7 +1111,7 @@ local function AuraIcon(pl, i)
 end
 
 -- Your own debuffs on the unit. The game has changed how auras are listed, so several ways
--- are tried in turn; the first one that answers is used, and /skt platesdebug says which.
+-- are tried in turn; the first one that answers is used, and /skt debug plates says which.
 local AURA_FILTER = "HARMFUL|PLAYER"
 
 -- While the game keeps auras secret (in combat, and a moment before it), every reader that
@@ -1330,7 +1323,7 @@ local function SwingLength(given, kind)
     return kind == SWING_RANGED and 2.8 or 2.0
 end
 
--- what the swing timer last heard, for /skt platesdebug
+-- what the swing timer last heard, for /skt debug plates
 local swingLog = { count = 0 }
 
 local function StartSwing(kind, duration, src)
@@ -1465,7 +1458,7 @@ end
 -- Showing and hiding
 ----------------------------------------------------------------------
 
--- what /skt platesdebug reports about plates that came late (see Rescan)
+-- what /skt debug plates reports about plates that came late (see Rescan)
 lateLog = { late = 0, stepErrors = 0 }
 
 -- each step on its own: one that fails (a value the game will not give yet, say) must not leave
@@ -1498,13 +1491,50 @@ end
 
 local Remove
 
+-- the game's own buff row on friendly plates (your heals over time, mostly): hidden. In an
+-- instance friendly plates are the game's alone and can't be touched; elsewhere they go.
+local friendlyHidden = setmetatable({}, { __mode = "k" })
+local function BuffRows(plate)
+    local uf = plate and plate.UnitFrame
+    if type(uf) ~= "table" then return {} end
+    local rows = {}
+    local af = uf.AurasFrame
+    if type(af) == "table" and type(af.BuffListFrame) == "table" then rows[#rows + 1] = af.BuffListFrame end
+    if type(uf.BuffFrame) == "table" then rows[#rows + 1] = uf.BuffFrame end
+    return rows
+end
+local function FriendlyBuffs(plate, friendly)
+    if not plate or (plate.IsForbidden and plate:IsForbidden()) then return end
+    for _, row in ipairs(BuffRows(plate)) do
+        if row.SetAlpha then
+            if friendly then
+                if not friendlyHidden[row] and _G.hooksecurefunc then
+                    hooksecurefunc(row, "SetAlpha", function(self, a)
+                        if friendlyHidden[self] == true and a ~= 0 and not self.sktBusy then
+                            self.sktBusy = true; self:SetAlpha(0); self.sktBusy = false
+                        end
+                    end)
+                end
+                friendlyHidden[row] = true
+                row:SetAlpha(0)
+            elseif friendlyHidden[row] then
+                friendlyHidden[row] = false
+                row:SetAlpha(1)
+            end
+        end
+    end
+end
+
 local function Add(unit)
-    if not db or not db.enabled then return end
-    if not IsEnemy(unit) then
+    if not db then return end
+    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit(unit)
+    local enemy = IsEnemy(unit)
+    if type(plate) == "table" then pcall(FriendlyBuffs, plate, not enemy) end
+    if not db.enabled then return end
+    if not enemy then
         if active[unit] then Remove(unit) end
         return
     end
-    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit(unit)
     if not plate or (plate.IsForbidden and plate:IsForbidden()) then return end
     local pl = plates[plate] or Create(plate)
     pl.unit = unit
@@ -1660,7 +1690,7 @@ local function GcdDraw(pl)
     if not g:IsShown() then g:Show(); g.ring:Show() end
 end
 
--- the last few plates added and removed, for /skt platelist
+-- the last few plates added and removed, for /skt debug platelist
 local plateLog = {}
 LogPlate = function(what, unit)
     local name = unit and Plain(UnitName(unit))
@@ -1773,7 +1803,7 @@ driver:SetScript("OnEvent", function(_, event, unit, arg2, arg3)
     if event == "UNIT_FACTION" and unit then
         -- a mind control, a duel, a flag: who counts as an enemy changed
         if IsEnemy(unit) and not active[unit] then Add(unit); return end
-        if not IsEnemy(unit) and active[unit] then Remove(unit); return end
+        if not IsEnemy(unit) then Add(unit); return end        -- drops ours, hides the game's buff row
     end
     local pl = unit and active[unit]
     local fn = UNIT_EVENTS[event]

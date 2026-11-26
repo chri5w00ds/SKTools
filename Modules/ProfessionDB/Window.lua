@@ -1,4 +1,4 @@
--- SKTools - Profession DB window (/sdb, the button on the world map, or a
+-- SKTools - Profession DB window (/skt map, the button on the world map, or a
 -- right-click on the minimap button). Built from plain frames and colour
 -- textures so it doesn't depend on Blizzard templates that move around.
 --

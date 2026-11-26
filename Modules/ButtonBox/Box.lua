@@ -827,7 +827,7 @@ ns.ButtonBox = {
         table.sort(out, function(a, b) return a.key:lower() < b.key:lower() end)
         return out
     end,
-    -- /skt boxdebug: what each gathered button looks like to the game, and what is under the mouse
+    -- /skt debug box: what each gathered button looks like to the game, and what is under the mouse
     Probe = function(print)
         local function N(o) return o and ((o.GetName and o:GetName()) or (o.GetObjectType and o:GetObjectType()) or "?") or "nil" end
         local function Info(o)

@@ -225,6 +225,14 @@ local holder            -- parent of all five dots
 local dots = {}
 local anchorInfo = "none"
 local previewing = false
+
+-- the target is friendly (a friendly player or NPC keeps Blizzard's own plate); false when unsure
+function ns.FriendlyTarget()
+    if not _G.UnitCanAttack then return false end
+    local ok, can = pcall(UnitCanAttack, "player", "target")
+    if not ok or can == nil or (issecretvalue and issecretvalue(can)) then return false end
+    return can == false and UnitExists("target") and true or false
+end
 local cachePlate, cacheAnchor, cacheHow, cacheAge = nil, nil, nil, 0
 
 local function Layer(parent, tex, level, min, max)
@@ -425,6 +433,11 @@ local function Update()
     mode = Mode()
     if not db.enabled or not mode then holder:Hide(); return end
     if db.combatOnly ~= false and not previewing and _G.UnitAffectingCombat and not UnitAffectingCombat("player") then
+        holder:Hide(); return
+    end
+
+    -- nothing on a friendly target (players and NPCs keep Blizzard's own plate), preview or not
+    if ns.FriendlyTarget() then
         holder:Hide(); return
     end
 

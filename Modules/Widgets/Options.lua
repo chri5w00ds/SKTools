@@ -31,7 +31,6 @@ local SLOT, GAP = 44, 14
 local function Build(panel)
     local L, R, CW = 24, 400, 330
     local BF = ns.Buffs
-    ns.WidgetsPanel = panel
 
     ------------------------------------------------------------------
     -- a section's title with its on / off tick box before it (as the cooldown panes' titles)
@@ -105,6 +104,7 @@ local function Build(panel)
         cells[key] = c
     end
     panel.cells = cells
+    ns.WidgetsPanel = panel             -- (reached by the tests)
 
     local function Redraw()
         for key, c in pairs(cells) do

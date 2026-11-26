@@ -4,10 +4,10 @@
 -- (https://github.com/Questie/QuestieDB, GPLv3). The icon hides itself once
 -- you've accepted or finished the quest, and for quests your race/class
 -- can't take. "Rare world drops" (items from more than 15 kinds of mob, like
--- the OOX distress beacons) are off by default; turn them on in /sm.
+-- the OOX distress beacons) are off by default; turn them on in the Nameplates tab.
 --
 -- Your own marks are kept separately in SavedVariables:
---   /sm starter add [questID]  |  /sm starter remove  |  /sm starter list
+--   /skt marks starter add [questID]  |  /skt marks starter remove  |  /skt marks starter list
 -- and anything learned from looting is added there automatically.
 
 local _, ns = ...

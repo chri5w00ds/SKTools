@@ -224,7 +224,7 @@ panel:SetClampedToScreen(true)
 panel:SetMovable(true)
 panel:Hide()
 
--- the title bar: PvP switch on the left, "All Objectives", fold button on the right
+-- the title bar: "All Objectives", the quest count and the fold button (the PvP switch sits on the first region line)
 local bar = CreateFrame("Frame", nil, panel)
 bar:SetPoint("TOPLEFT"); bar:SetPoint("TOPRIGHT")
 bar:SetHeight(26)
@@ -239,16 +239,16 @@ bar.rule:SetHeight(1); bar.rule:SetColorTexture(0.72, 0.56, 0.24, 0.9)
 bar.title = bar:CreateFontString(nil, "OVERLAY")
 bar.title:SetFontObject(FontObj("ObjectiveTrackerHeaderFont", "GameFontNormalMed2"))
 bar.title:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
-bar.title:SetPoint("LEFT", 28, 0)
+bar.title:SetPoint("LEFT", 28, -2)         -- on the bar art's shadow; a little lower: room above the capitals
 -- how many quests you have, of the most you can: "12/40" next to the title
 bar.count = bar:CreateFontString(nil, "OVERLAY")
 bar.count:SetFontObject(FontObj("ObjectiveTrackerLineFont", "GameFontHighlight"))
 
--- the PvP switch: crossed swords, lit while the PvP list shows
+-- the PvP switch: crossed swords, lit while the PvP list shows. It sits at the right of the first
+-- region line, before its fold sign; with no region line (nothing listed, or folded to the bar)
+-- it keeps that spot on a line of its own. (Placed in Redraw.)
 local pvp = CreateFrame("Button", nil, bar)
 pvp:SetSize(18, 18)
-pvp:SetPoint("LEFT", 4, 0)
-pvp.bg = pvp:CreateTexture(nil, "BACKGROUND"); pvp.bg:SetAllPoints(); pvp.bg:SetColorTexture(0.08, 0.08, 0.08, 0.9)
 pvp.icon = pvp:CreateTexture(nil, "ARTWORK"); pvp.icon:SetPoint("TOPLEFT", 2, -2); pvp.icon:SetPoint("BOTTOMRIGHT", -2, 2)
 if not Atlas(pvp.icon, "pvptalents-warmode-swords") then
     pvp.icon:SetTexture("Interface\\Icons\\INV_Sword_27")
@@ -269,7 +269,7 @@ local fold = CreateFrame("Button", nil, bar)
 fold:SetSize(16, 16)
 fold:SetPoint("RIGHT", -4, 0)
 -- the count sits at the right, just before the fold button
-bar.count:SetPoint("RIGHT", fold, "LEFT", -6, 0)
+bar.count:SetPoint("RIGHT", fold, "LEFT", -6, -2)   -- level with the title
 bar.count:SetJustifyH("RIGHT")
 fold.tex = fold:CreateTexture(nil, "ARTWORK"); fold.tex:SetAllPoints()
 fold.text = fold:CreateFontString(nil, "OVERLAY", "GameFontNormal"); fold.text:SetPoint("CENTER")
@@ -302,7 +302,7 @@ local function Head(i)
     h.text:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
     h.text:SetPoint("LEFT", 4, 0)
     h.sign = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    h.sign:SetPoint("RIGHT", -6, 0)
+    h.sign:SetPoint("RIGHT", -6, 2)         -- the font sits the minus low: raised to the middle
     h.sign:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
     h.rule = h:CreateTexture(nil, "ARTWORK")
     h.rule:SetPoint("BOTTOMLEFT", 2, 0); h.rule:SetPoint("BOTTOMRIGHT", -2, 0)
@@ -519,7 +519,6 @@ Redraw = function()
         bar.count:SetTextColor(full and 1 or 0.85, full and 0.3 or 0.85, full and 0.3 or 0.85)
         state.count = ("%d/%d"):format(n, most)
     end
-    pvp.bg:SetColorTexture(db.pvp and 0.45 or 0.08, 0.08, 0.08, 0.9)
     pvp.icon:SetDesaturated(not db.pvp)
     if not fold.atlasDone then
         fold.atlasDone = true
@@ -618,12 +617,24 @@ Redraw = function()
         end
     end
     for i = nh + 1, #heads do heads[i]:Hide() end
+    -- the PvP switch: always on the line below the bar, at the right - on the first region line,
+    -- or on a line of its own there when none is listed (nothing to list, or folded)
+    pvp:ClearAllPoints()
+    if nh >= 1 then
+        pvp:SetParent(heads[1]); pvp:SetFrameLevel(heads[1]:GetFrameLevel() + 2)
+        pvp:SetPoint("RIGHT", heads[1], "RIGHT", -22, 0)
+    else
+        pvp:SetParent(panel); pvp:SetFrameLevel(bar:GetFrameLevel() + 2)
+        pvp:SetPoint("RIGHT", panel, "TOPRIGHT", -(PAD + 22), -(26 + 2 + 10))
+    end
+    pvp:Show()
     for i = nb + 1, #blocks do blocks[i]:Hide(); blocks[i].questID = nil; if blocks[i].spoken then blocks[i].spoken:Hide() end end
 
     list:SetSize(w, math.max(1, y))
     local shown = math.min(y, db.maxHeight or 520)
     scroll:SetHeight(math.max(1, shown))
-    panel:SetHeight(26 + 2 + shown)
+    -- with no region line, room for the PvP switch's own line
+    panel:SetHeight(26 + 2 + ((nh == 0) and math.max(shown, 20) or shown))
     local range = math.max(0, y - shown)
     if (scroll:GetVerticalScroll() or 0) > range then scroll:SetVerticalScroll(range) end
     state.quests, state.regions = quests, nh

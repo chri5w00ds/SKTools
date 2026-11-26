@@ -62,12 +62,6 @@ local function BarFrame(bar)
     end
 end
 
-local function Over(f)
-    if not (f and f.IsMouseOver) then return false end
-    local ok, r = pcall(f.IsMouseOver, f)
-    return ok and r == true
-end
-
 -- The mouse over the bar: one check a bar, against the bar's area - its frame, grown to take in its
 -- buttons (on older clients they can sit outside it). The area is measured once a second, not on
 -- every check; the check itself is a little arithmetic on the cursor's place.
