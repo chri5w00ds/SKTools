@@ -49,23 +49,33 @@ local function Build(panel)
         function() return T().fontSize or 13 end,
         function(v) T().fontSize = v; R() end, W.px, CW), L, -240)
 
+    ------------------------------------------------------------------
+    local QL = function() return ns.QuestLevels.Settings() or {} end
+    W.Header(panel, "Talking to NPCs", L, -292, 680)
+    local levels = panel:Add(W.Check(panel, "Quest levels in NPC dialogs",
+        function() return ns.FeatureOn(QL()) end,
+        function(v) ns.SetFeatureOn(QL(), v) end, CW), L, -318)
+    levels.tooltip = "\"[12] \" before each quest's name where an NPC offers or takes quests, and on the quest's own "
+        .. "page when you open it from that list - so you see its level before you pick it up. "
+        .. "Berry Mode keeps its own on / off for this (off until you turn it on)."
+
     ------------------------------------------------------------------ position
     local rule = panel:CreateTexture(nil, "ARTWORK")
     rule:SetColorTexture(0.82, 0.68, 0.30, 0.35)
     rule:SetSize(700, 1)
-    rule:SetPoint("TOPLEFT", panel, "TOPLEFT", L, -296)
+    rule:SetPoint("TOPLEFT", panel, "TOPLEFT", L, -358)
     local unlock = panel:Add(W.Check(panel, "Unlock the tracker (drag to move)",
         function() return T().unlocked == true end,
-        function(v) T().unlocked = v and true or false; R() end, 360), L, -310)
+        function(v) T().unlocked = v and true or false; R() end, 360), L, -372)
     unlock.tooltip = "Shows a frame over the tracker: drag it to move the tracker. It grows down from its top right "
         .. "corner, as the game's does. Untick when you are done."
     panel:Add(W.Button(panel, "Reset position", 130, function()
         ns.QuestTracker.ResetPosition()
         ns.Print("quest tracker position reset.")
-    end), L + 440, -306)
+    end), L + 440, -368)
     panel:Add(W.Button(panel, "Debug to log", 120, function()
         ns.Report("quests", function(out) ns.QuestTracker.Debug(out) end, true)
-    end), L + 580, -306)
+    end), L + 580, -368)
 end
 
 ns.RegisterTab({ key = "quests", title = "Quests", order = 2.9, Build = Build })
