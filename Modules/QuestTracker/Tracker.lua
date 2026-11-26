@@ -216,6 +216,14 @@ local function Size(fs, size)
 end
 
 local PlaceItems               -- the quest item buttons (further down)
+local openAfterFight           -- a quest clicked in a fight: opened in the quest log once it's over
+local untrackAfterFight = {}   -- [questID] = index: shift-clicked in a fight, untracked once it's over
+local function Untrack(questID, index)
+    if ns.Touch then ns.Touch("quest tracker: stopped tracking a quest") end
+    local Q = _G.C_QuestLog
+    if Q and Q.RemoveQuestWatch then pcall(Q.RemoveQuestWatch, questID)
+    elseif _G.RemoveQuestWatch and type(index) == "number" then pcall(RemoveQuestWatch, index) end
+end
 local superTracked            -- the quest the map arrow points at
 
 local panel = CreateFrame("Frame", "SKToolsQuestTracker", UIParent)
@@ -364,6 +372,7 @@ local function Block(i)
     b.poi:SetScript("OnClick", function()
         -- the map's arrow points at this quest
         if b.questID and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
+            if ns.Touch then ns.Touch("quest tracker: map arrow set to a quest") end
             pcall(C_SuperTrack.SetSuperTrackedQuestID, b.questID)
         end
     end)
@@ -377,13 +386,34 @@ local function Block(i)
         if not b.questID then return end
         Q = _G.C_QuestLog
         if IsShiftKeyDown and IsShiftKeyDown() then
-            -- stop tracking it
-            if Q and Q.RemoveQuestWatch then pcall(Q.RemoveQuestWatch, b.questID)
-            elseif _G.RemoveQuestWatch and b.index then pcall(RemoveQuestWatch, b.index) end
+            -- chat box open: the quest's link into it, as the game's tracker does
+            local edit = _G.ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow()
+            if edit then
+                local link = _G.GetQuestLink and (Plain(select(2, pcall(GetQuestLink, b.questID)))
+                    or (b.index and Plain(select(2, pcall(GetQuestLink, b.index)))))
+                if type(link) ~= "string" then link = tostring(b.title:GetText() or "") end
+                if not (_G.ChatEdit_InsertLink and ChatEdit_InsertLink(link)) then edit:Insert(link) end
+                return
+            end
+            -- otherwise: stop tracking it. Not in a fight: the game's tracker rebuilds its quest
+            -- markers in answer, and from an addon mid-fight that is a blocked call; it waits.
+            if InCombatLockdown and InCombatLockdown() then
+                untrackAfterFight[b.questID] = b.index or true
+                ns.Print("stops being tracked when the fight is over.")
+                return
+            end
+            Untrack(b.questID, b.index)
             Redraw()
             return
         end
-        -- open it in the quest log
+        -- open it in the quest log. Not in a fight: opening the map from an addon there makes the
+        -- game's quest markers on it blocked calls (SetPassThroughButtons); it opens once it's over.
+        if InCombatLockdown and InCombatLockdown() then
+            openAfterFight = b.questID
+            ns.Print("the quest log opens when the fight is over.")
+            return
+        end
+        if ns.Touch then ns.Touch("quest tracker: opened the quest log") end
         if _G.QuestMapFrame_OpenToQuestDetails then
             pcall(QuestMapFrame_OpenToQuestDetails, b.questID)
         elseif _G.QuestLogFrame and b.index then
@@ -664,6 +694,7 @@ end
 local function Fighting() return InCombatLockdown and InCombatLockdown() end
 
 local function Apply(f)
+    if ns.Touch then ns.Touch("quest tracker: " .. (wantHidden and "hid" or "showed") .. " the game's tracker" .. (Fighting() and " (see-through only, in a fight)" or "")) end
     if wantHidden then
         pcall(f.SetAlpha, f, 0)                        -- allowed even in a fight
         if Fighting() then pendingBlizzard = true; return end
@@ -882,6 +913,16 @@ driver:SetScript("OnEvent", function(_, event)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" and pendingBlizzard then SetGameTracker(wantHidden) end
+    if event == "PLAYER_REGEN_ENABLED" and next(untrackAfterFight) then
+        for id, index in pairs(untrackAfterFight) do Untrack(id, index) end
+        wipe(untrackAfterFight)
+        Redraw()
+    end
+    if event == "PLAYER_REGEN_ENABLED" and openAfterFight then
+        local id = openAfterFight; openAfterFight = nil
+        if ns.Touch then ns.Touch("quest tracker: opened the quest log (after the fight)") end
+        if _G.QuestMapFrame_OpenToQuestDetails then pcall(QuestMapFrame_OpenToQuestDetails, id) end
+    end
     if event == "PLAYER_REGEN_ENABLED" and itemsPending then PlaceItems() end
     if event == "BAG_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_COOLDOWN" then
         for _, btn in ipairs(itemButtons) do if btn:IsShown() then ItemLook(btn) end end

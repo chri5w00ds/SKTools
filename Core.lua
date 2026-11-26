@@ -267,6 +267,40 @@ f:SetScript("OnEvent", function(self, event, name)
 end)
 
 ----------------------------------------------------------------------
+-- Blocked calls. The game names only the call it refused, not what led to it, so the parts that
+-- touch the game's own frames note what they did (ns.Touch); a blocked call says so in chat once
+-- and writes the last few seconds of those notes to the report log.
+----------------------------------------------------------------------
+local touches = {}
+function ns.Touch(what)
+    table.insert(touches, 1, { t = GetTime(), what = what })
+    touches[9] = nil
+end
+do
+    local seen = {}
+    local bf = CreateFrame("Frame")
+    for _, e in ipairs({ "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN" }) do pcall(bf.RegisterEvent, bf, e) end
+    bf:SetScript("OnEvent", function(_, event, who, call)
+        if who ~= ADDON then return end
+        call = tostring(call)
+        local now = GetTime()
+        local lines = { ("%s: %s, %s"):format(event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked", call,
+            (InCombatLockdown and InCombatLockdown()) and "in a fight" or "out of a fight") }
+        local wm = _G.WorldMapFrame
+        lines[#lines + 1] = "  world map open: " .. tostring(wm and wm.IsShown and wm:IsShown() or false)
+        for _, x in ipairs(touches) do
+            if now - x.t <= 30 then lines[#lines + 1] = ("  %.1f s before: %s"):format(now - x.t, x.what) end
+        end
+        if #lines == 2 then lines[#lines + 1] = "  nothing SKTools noted in the 30 s before" end
+        if ns.LogAdd then ns.LogAdd("blocked call", lines) end
+        if not seen[call] then
+            seen[call] = true
+            ns.Print("|cffff5555the game blocked a call:|r " .. call .. " - what led to it is in /skt log, please pass it on.")
+        end
+    end)
+end
+
+----------------------------------------------------------------------
 -- /skt
 ----------------------------------------------------------------------
 

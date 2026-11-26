@@ -763,12 +763,15 @@ local DO = {
         ns.Print(h.enabled and "action bars hide until hovered." or "action bars always show.")
     end,
     unlock = function()
-        -- the cooldown panes and the widget panes together
+        -- the cooldown panes and the widgets (buff panes, PvP icon, zone text) together
         local cd = ns.Cooldowns and ns.Cooldowns.Settings()
         local bw = ns.Buffs and ns.Buffs.Settings()
         local on = not ((cd and cd.unlocked) or (bw and bw.unlocked))
         if cd then cd.unlocked = on; ns.Cooldowns.Refresh() end
         if bw then bw.unlocked = on; if ns.Buffs.Refresh then ns.Buffs.Refresh() end end
+        -- the PvP icon and the zone text move with the widgets
+        if ns.PvPIcon then ns.PvPIcon.Refresh() end
+        if ns.ZoneText then ns.ZoneText.Refresh() end
         ns.Print(on and "panes unlocked: drag them where you like." or "panes locked.")
     end,
     berry = function()

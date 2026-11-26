@@ -246,27 +246,45 @@ local function Build(panel)
         function() return P().size or 36 end,
         function(v) P().size = v; ns.PvPIcon.Refresh() end, W.px, CW), R, -296)
 
+    ------------------------------------------------------------------
+    local Z = function() return ns.ZoneText.Settings() or {} end
+    Section("Zone text", -334,
+        function() return ns.FeatureOn(Z()) end,
+        function(v) ns.SetFeatureOn(Z(), v); ns.ZoneText.Refresh() end,
+        "Move the game's zone text: the area name you see entering a zone, with the sub-zone and PvP lines under it. "
+        .. "Only where it shows changes. Off, the game's frames are left alone. "
+        .. "Berry Mode keeps its own on / off for this (off until you turn it on).")
+    W.Note(panel, "The area name you see entering a zone. Drag it with Unlock widgets below.", L, -362, 420)
+    panel:Add(W.Button(panel, "Reset position", 130, function()
+        ns.ZoneText.ResetPosition()
+    end), L + 440, -358)
+
     ------------------------------------------------------------------ all of them
     local rule = panel:CreateTexture(nil, "ARTWORK")
     rule:SetColorTexture(0.82, 0.68, 0.30, 0.35)
     rule:SetSize(700, 1)
-    rule:SetPoint("TOPLEFT", panel, "TOPLEFT", L, -346)
+    rule:SetPoint("TOPLEFT", panel, "TOPLEFT", L, -392)
     local unlock = panel:Add(W.Check(panel, "Unlock widgets (drag to move, corner to resize)",
         function() return B().unlocked == true end,
-        function(v) B().unlocked = v and true or false; BF.Refresh(); if ns.PvPIcon then ns.PvPIcon.Refresh() end end, 360), L, -360)
+        function(v)
+            B().unlocked = v and true or false; BF.Refresh()
+            if ns.PvPIcon then ns.PvPIcon.Refresh() end
+            if ns.ZoneText then ns.ZoneText.Refresh() end
+        end, 360), L, -404)
     unlock.tooltip = "Shows the widgets with examples. Drag one to move it; drag its white corner to resize it. "
         .. "Untick when you are done."
     panel:Add(W.Button(panel, "Reset positions", 130, function()
         BF.ResetPositions()
         if ns.PvPIcon then ns.PvPIcon.ResetPosition() end
+        if ns.ZoneText then ns.ZoneText.ResetPosition() end
         ns.Print("widget positions reset.")
-    end), L + 440, -356)
+    end), L + 440, -400)
     panel:Add(W.Button(panel, "Debug to log", 120, function()
         ns.Report("widgets", function(out)
             BF.Debug(out)
             if ns.PvPIcon then ns.PvPIcon.Debug(out) end
         end, true)
-    end), L + 580, -356)
+    end), L + 580, -400)
 
     local oldSync = panel.OnSync
     function panel:OnSync()

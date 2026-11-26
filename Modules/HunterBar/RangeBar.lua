@@ -734,9 +734,6 @@ for _, ev in ipairs({
 -- (The combat log is reserved for Blizzard's UI on Forever - registering for it
 -- triggers the "blocked from an action" warning - so it is not used.)
 SafeRegister(driver, "UNIT_COMBAT")
-SafeRegister(driver, "ADDON_ACTION_BLOCKED")
-SafeRegister(driver, "ADDON_ACTION_FORBIDDEN")
-local blockedSeen = {}
 local HIT_EVENTS = {
     WOUND = true, MISS = true, DODGE = true, PARRY = true, BLOCK = true,
     DEFLECT = true, ABSORB = true, RESIST = false,
@@ -754,14 +751,6 @@ driver:SetScript("OnEvent", function(_, event, arg1, arg2, _, _, school)
         meleeUntil = now + MELEE_LATCH
         closeUntil = now + ERROR_LATCH
         farUntil   = 0
-        return
-    elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-        -- tell the user exactly which call the client refused, once each
-        if arg1 == ADDON_NAME and arg2 and not blockedSeen[arg2] then
-            blockedSeen[arg2] = true
-            DEFAULT_CHAT_FRAME:AddMessage(TAG .. ": |cffff5555blocked call:|r "
-                .. tostring(arg2) .. "  (please report this)")
-        end
         return
     elseif event == "CVAR_UPDATE" then
         RefreshNameplateRange()
