@@ -7,9 +7,10 @@ local ADDON, ns = ...
 local W = ns.W
 local GOLD, EDGE = W.GOLD, W.EDGE
 
-local WIDTH, HEIGHT = 780, 566
-local TAB_TOP = -40          -- tab row
-local PANEL_TOP = -76        -- where a tab's content starts
+local WIDTH, HEIGHT = 780, 592
+local TAB_TOP = -40          -- the first tab row
+local TAB_ROW = 26           -- the second row sits this much lower
+local PANEL_TOP = -102       -- where a tab's content starts
 local FOOTER = 44
 
 local frame
@@ -72,33 +73,31 @@ local function Select(key)
     end
 end
 
--- the tabs: the same margin on both sides of the window and the same gap between each two; each
--- as wide as its title needs, with less padding round the titles if they would not fit otherwise.
+-- the tabs: two rows (the first takes the odd one out), each row's tabs the same width, filling
+-- the window between equal margins - room on both sides of every title.
 -- Only the tabs in use are laid out (Berry Mode leaves some out).
 LayoutTabs = function()
-    local MARGIN, LEFT, RIGHT = 10, 14, WIDTH - 14
+    local MARGIN, LEFT, RIGHT, GAP = 10, 14, WIDTH - 14, 8
     local shown = {}
     for _, b in ipairs(tabButtons) do
         if TabShown(b.tab) then shown[#shown + 1] = b; b:Show() else b:Hide() end
     end
     local n = #shown
+    local first = math.ceil(n / 2)
     local room = (RIGHT - MARGIN) - (LEFT + MARGIN)
-    local texts, sum = {}, 0
-    for i, b in ipairs(shown) do texts[i] = (b.label and b.label:GetStringWidth()) or 70; sum = sum + texts[i] end
-    local pad = 34
-    while pad > 14 and sum + n * pad + (n - 1) * 4 > room do pad = pad - 2 end
-    local total = 0
-    for i, b in ipairs(shown) do
-        b:SetWidth(texts[i] + pad)
-        total = total + texts[i] + pad
+    local function Row(from, to, y)
+        local k = to - from + 1
+        if k < 1 then return end
+        local w = (room - (k - 1) * GAP) / k
+        for i = from, to do
+            local b = shown[i]
+            b:SetWidth(w)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT + MARGIN + (i - from) * (w + GAP), y)
+        end
     end
-    local gap = (n > 1) and (room - total) / (n - 1) or 0
-    local x = LEFT + MARGIN
-    for _, b in ipairs(shown) do
-        b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", frame, "TOPLEFT", x, TAB_TOP)
-        x = x + b:GetWidth() + gap
-    end
+    Row(1, first, TAB_TOP)
+    Row(first + 1, n, TAB_TOP - TAB_ROW)
 end
 
 -- Berry Mode switched: the open tab shows the switches of the mode now in use
@@ -155,13 +154,12 @@ local function Build()
 
     -- the tabs stand on a bronze-edged box that holds the open tab's controls
     local box = CreateFrame("Frame", nil, frame)
-    box:SetPoint("TOPLEFT", 14, TAB_TOP - 24)
+    box:SetPoint("TOPLEFT", 14, TAB_TOP - TAB_ROW - 24)
     box:SetPoint("BOTTOMRIGHT", -14, FOOTER - 2)
     box:SetFrameLevel(frame:GetFrameLevel() + 1)
     W.Skin(box, "inset")
 
-    -- the tabs: the same margin on both sides of the window and the same gap between each two; each
-    -- as wide as its title needs, with less padding round the titles if they would not fit otherwise
+    -- the tabs, in two rows (laid out by LayoutTabs)
     for i, tab in ipairs(ns.tabs) do
         local b = W.Tab(frame, tab.title, function(self) Select(self.key) end)
         b.key = tab.key
